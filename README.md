@@ -11,12 +11,12 @@
 ```mvn
 mvn clean compile javafx:run
 ```
-####     3.2 jinterface版本原项目很老，我找了新的jinterface引用，放在了lib下
+####     3.2 jinterface版本原项目很老，我找了新的jinterface引用，放在了lib下, 一共三个 对应 OTP 25以下 OTP 26 以及 OTP 27 
 ####     本地包安装：
 ```mvn
 mvn install:install-file  -Dfile=lib\OtpErlang-otp25-java21-1.13.2.jar -DgroupId=org.ericsson.otp -DartifactId=jinterface -Dversion=1.13.2 -Dpackaging=jar  -DgeneratePom=true
 ```
-本地包引用
+安装后，在pom.xml中进行本地包引用 修改版本已对应目标节点版本
 ```xml
 <dependency>
     <groupId>org.ericsson.otp</groupId>
