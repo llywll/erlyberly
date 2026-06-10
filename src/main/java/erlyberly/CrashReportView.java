@@ -42,15 +42,15 @@ public class CrashReportView extends TabPane {
         VBox.setVgrow(termTreeView, Priority.ALWAYS);
 
         Label label;
-        label = new Label("Stack Trace");
+        label = new Label("堆栈跟踪");
         label.setStyle("-fx-padding: 5; -fx-font-size: 14;");
 
         Tab stackTraceTab, argsTermsTab, termsTab;
-        termsTab = new Tab("Crash Report Terms");
+        termsTab = new Tab("崩溃报告术语");
         termsTab.setContent(termTreeView);
-        argsTermsTab = new Tab("Call Args");
+        argsTermsTab = new Tab("调用参数");
         argsTermsTab.setContent(argsTreeView);
-        stackTraceTab = new Tab("Stack Trace");
+        stackTraceTab = new Tab("堆栈跟踪");
         stackTraceTab.setContent(new VBox(crashInfoTable, label, stackTraceView));
 
         getTabs().addAll(stackTraceTab, argsTermsTab, termsTab);
@@ -61,13 +61,13 @@ public class CrashReportView extends TabPane {
         termTreeView.populateFromTerm(crashReport.getProps());
 
         Object[][] crashProps = {
-                {"Pid", crashReport.getPid() },
-                {"Reg. Name", crashReport.getRegisteredName() },
-                {"Error", ErlyBerly.getTermFormatter().exceptionToString(crashReport.getErrorClass(), crashReport.getErrorReason()) },
-                {"Initial Call", ErlyBerly.getTermFormatter().modFuncArgsToString((OtpErlangTuple) crashReport.getProcessInitialCall()) }};
+                {"进程ID", crashReport.getPid() },
+                {"注册名称", crashReport.getRegisteredName() },
+                {"错误", ErlyBerly.getTermFormatter().exceptionToString(crashReport.getErrorClass(), crashReport.getErrorReason()) },
+                {"初始调用", ErlyBerly.getTermFormatter().modFuncArgsToString((OtpErlangTuple) crashReport.getProcessInitialCall()) }};
 
-        TableColumn<Object[], Object> keyColumn = new TableColumn<>("Key");
-        TableColumn<Object[], Object> valueColumn = new TableColumn<>("Value");
+        TableColumn<Object[], Object> keyColumn = new TableColumn<>("键");
+        TableColumn<Object[], Object> valueColumn = new TableColumn<>("值");
 
         keyColumn.setCellValueFactory(new Callback<CellDataFeatures<Object[], Object>, ObservableValue<Object>>() {
             @Override

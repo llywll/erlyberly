@@ -1,201 +1,223 @@
-**erlyberly is looking for contributors, especially if you would like to code java. Have a look at the issues or ping me at  https://twitter.com/erlyberlytips.**
+**erlyberly 正在寻找贡献者，特别是如果你愿意编写 Java 代码。请查看问题列表或通过 https://twitter.com/erlyberlytips 联系我。**
 
 ---
-
+## 个人修改：
+### 0.汉化
+### 1.新增进程字典查看
+### 2.新增ets查看
+### 3.目前问题：
+####     3.1调试需要开启javafx环境，原项目java版本很老，新版本java不在集成javafx,
+调试方法：
+```mvn
+mvn clean compile javafx:run
+```
+####     3.2 jinterface版本原项目很老，我找了新的jinterface引用，放在了lib下
+####     本地包安装：
+```mvn
+mvn install:install-file  -Dfile=lib\OtpErlang-otp25-java21-1.13.2.jar -DgroupId=org.ericsson.otp -DartifactId=jinterface -Dversion=1.13.2 -Dpackaging=jar  -DgeneratePom=true
+```
+本地包引用
+```xml
+<dependency>
+    <groupId>org.ericsson.otp</groupId>
+    <artifactId>jinterface</artifactId>
+    <version>version</version>
+</dependency>
+```
+#### 打包还没搞 ^_^
+#### 不过除了mvn开启javafx，jar包运行时需要调整java vm的参数使其携带javafx组件方可正常运行
 # erlyberly
 
-[![Build Status](https://travis-ci.org/andytill/erlyberly.svg?branch=master)](https://travis-ci.org/andytill/erlyberly)
+[![构建状态](https://travis-ci.org/andytill/erlyberly.svg?branch=master)](https://travis-ci.org/andytill/erlyberly)
 
-**erlyberly** is a debugger for erlang, [elixir](https://twitter.com/andy_till/status/539566833515626497) and LFE using erlang tracing. It is probably the easiest and quickest way to start debugging your nodes.
+**erlyberly** 是一个使用 Erlang 追踪功能的 Erlang、[Elixir](https://twitter.com/andy_till/status/539566833515626497) 和 LFE 调试器。它可能是开始调试节点的最简单和最快捷的方式。
 
-If you are using `io:format/2` or lager for debugging then erlyberly can save you time.  Tracing requires no code changes and no recompliation to see function calls and results. **erlyberly** makes debugging smoother by reapplying traces when modules are reloaded and when the node restarts.
+如果你正在使用 `io:format/2` 或 lager 进行调试，那么 erlyberly 可以节省你的时间。追踪无需修改代码或重新编译即可查看函数调用和结果。**erlyberly** 通过在模块重新加载或节点重启时重新应用追踪，使调试更加顺畅。
 
-### Quick start
+### 快速入门
 
-A one liner to go from zero to erlyberly user.  You will need erlc (erlang compiler) on the path and **JDK 8u20** or higher installed to run erlyberly, download it [here](http://www.oracle.com/technetwork/java/javase/downloads/jdk8-downloads-2133151.html), see instructions for command line java installs for some operating systems [here](https://github.com/andytill/erlyberly/wiki/Java-install).  More compile instructions are in the [wiki page](https://github.com/andytill/erlyberly/wiki/Compiling)
+从零开始到成为 erlyberly 用户的一行命令。你需要在路径上安装 erlc（Erlang 编译器）和 **JDK 8u20** 或更高版本才能运行 erlyberly，从[这里](http://www.oracle.com/technetwork/java/javase/downloads/jdk8-downloads-2133151.html)下载，某些操作系统的命令行 Java 安装说明见[这里](https://github.com/andytill/erlyberly/wiki/Java-install)。更多编译说明在 [wiki 页面](https://github.com/andytill/erlyberly/wiki/Compiling)中。
 
 ```
 git clone https://github.com/andytill/erlyberly.git && cd erlyberly && ./mvnw clean compile install assembly:single && java -jar target/*runnable.jar
-```
-
-If you already have erlyberly and want to update to have the latest features, run the following from the erlyberly project directory.
+ ```
+如果你已经有 erlyberly 并想更新以获取最新功能，请在 erlyberly 项目目录中运行以下命令。
 
 ```
 git pull origin && ./mvnw clean compile install assembly:single && java -jar target/*runnable.jar
 ```
+要创建开发环境，请按照 [wiki 中的三个步骤](https://github.com/andytill/erlyberly/wiki/Dev-Environment)进行操作。
 
-To create a development environment, follow the three steps [in the wiki](https://github.com/andytill/erlyberly/wiki/Dev-Environment).
+如果无法构建，请提出问题，包括操作系统、Java 版本和 Erlang 版本。
 
-Please raise an issue if you are unable to build that includes the OS, java version and erlang versions.
+### 功能和使用方法
 
-### Features and How To
+##### 在函数上设置追踪
 
-##### Set traces on functions
+所有由 VM 加载的模块都会出现在模块树中。展开其中一个模块以查看函数，双击星号可切换追踪的开启和关闭。现在对该函数的任何调用都将显示在右侧列表中。选择函数时按 `ctrl+t` 可以在不触碰鼠标的情况下切换追踪。
 
-All the modules loaded by the VM appear in the module tree.  Expand one of modules to view the functions, double clicking the star toggles tracing on and off.  Any calls made to that function by any process will now be shown in the right hand list.  Press `ctrl+t` while a function is selected to toggle a trace without touching your mouse.
+![你看不到美丽的屏幕截图](doc/erlyberly.png)
 
-![you cannot see the beautiful screen shot](doc/erlyberly.png)
+右键单击模块，然后单击 **Module Trace** 可对模块下显示的所有函数设置追踪。如果由于过滤器而未显示某些函数，则不会应用追踪。
 
-Right click on a module and then click **Module Trace** to put a trace on all functions displayed under the module. If some functions are not displayed because of a filter, the trace will not be applied.
+##### 查看函数调用及其结果
 
-##### See calls to functions and their results
+双击追踪条目可查看函数调用的参数和结果的详细信息。
 
-Double click on a trace to see a breakdown of the arguments and results of the function call.
+![你看不到美丽的屏幕截图](doc/termview.png)
 
-![you cannot see the beautiful screen shot](doc/termview.png)
+##### 查看抛出异常的调用
 
-##### See calls that threw exceptions
+异常会被高亮显示。
 
-Exceptions are highlighted.
+![你看不到美丽的屏幕截图](doc/exceptions.png)
 
-![you cannot see the beautiful screen shot](doc/exceptions.png)
+##### 查看未完成的调用
 
-##### See incomplete calls
+尚未返回的调用会以黄色高亮显示。
 
-A call that hasn't returned yet is highlighted in yellow.
+##### 消息的顺序追踪
 
-##### Sequential Tracing of messages
+顺序追踪 ([seq_trace](http://www.erlang.org/doc/man/seq_trace.html)) 是从进程到进程的消息追踪，允许你查看消息在应用程序中的流动。
 
-Sequential Tracing ([seq_trace](http://www.erlang.org/doc/man/seq_trace.html)) is message tracing from process to process, allowing you to see the message flow through the application.
+![你看不到美丽的屏幕截图](doc/seq-trace.png)
 
-![you cannot see the beautiful screen shot](doc/seq-trace.png)
+要启动顺序追踪，请右键单击函数并选择 **Seq Trace (experimental)**，会弹出一个窗口来显示追踪消息。当被追踪的函数被调用时，之后发送的消息将显示在窗口中。
 
-To start a seq trace right click on a function and select **Seq Trace (experimental)**, a Window will pop up that will display the trace messages.  When the traced function is called, messages sent afterwards are shown in the window.
+此功能是实验性的，极有可能导致被测节点和 erlyberly 崩溃。一旦设置了顺序追踪，唯一停止它的方法是终止 erlyberly 或在远程节点的 shell 中运行 `seq_trace:reset_trace()`。
 
-This functionality is experimental and highly likely to bork the remote node under test and erlyberly.  Once a seq trace is set the only way to stop it is to terminate erlyberly or run `seq_trace:reset_trace()` in the shell of the remote node.
+##### 获取进程状态
 
-##### Get the process state
+获取并显示进程的状态。
 
-Get and display the state of a process. 
+![你看不到美丽的屏幕截图](doc/process-state.png)
 
-![you cannot see the beautiful screen shot](doc/process-state.png)
+这在底层使用 [sys:get_state/1](http://www.erlang.org/doc/man/sys.html#get_state-1)，因此具有相同的限制。不支持系统消息的进程可能不会响应。
 
-This uses [sys:get_state/1](http://www.erlang.org/doc/man/sys.html#get_state-1) under the hood and so has the same limitations. Processes that do not support the system message may not respond.
+如果值是一个记录，并且该记录编译到了进程初始调用的模块中，那么记录名称和字段名称将会高亮显示。在编译时模块未知的记录将不会被高亮显示。
 
-If the value is a record that is compiled into the module of the processes initial call then the record name and field names will appear highlighted. Records that are not known by the module at compile time will not be highlighted.
+##### 连接到任何正在运行的系统
 
-##### Attach to any running system
+erlyberly 作为 Erlang 节点连接到你要追踪的节点。连接后，它可以追踪你的应用程序代码、第三方模块以及属于 Erlang 标准库的模块。
 
-erlyberly connects as an erlang node to the node you want to trace. Once connected it can trace your application code, 3rd party modules and modules that are part of the erlang standard libary.
+只需确保 `runtime_tools` 应用程序在代码路径中可用。如果节点是直接使用 erl 运行的，那么它默认就是可用的。
 
-Just make sure that the `runtime_tools` application is available in the code path.  If the node was run using erl directly then it will be available by default.
+erlyberly 不打算用于追踪生产系统。与 redbug 不同，它没有过载保护。
 
-erlyberly is not meant to trace production systems.  There is no overload protection as per redbug.
+##### 过滤
 
-##### Filtering
+通过使用过滤字段轻松找到你想要的内容。
 
-Easily find what you're looking for by using the filter fields.
-
-|        Filter       |                             What is searched?                             |
+|        过滤器       |                             搜索内容                             |
 | ------------------- | :-----------------------------------------------------------------------: |
-| processes           |                          pid and registered name                          |
-| modules & functions | modules, functions can be filtered using a colon i.e. `my_module:my_func` |
-| trace logs          |                        All text shown in the trace                        |
+| 进程           |                          pid 和注册名称                          |
+| 模块和函数 | 模块、函数可以使用冒号进行过滤，即 `my_module:my_func` |
+| 追踪日志          |                        追踪中显示的所有文本                        |
 
-The process and trace filters support **or** and **not** filters, module filtering does not support this.  By entering `!io` in the trace filter, all traces containing the text `io` will be hidden, by entering `lists|proplists` only traces containing the text `lists` or `proplists` will be shown.
+进程和追踪过滤器支持 **or** 和 **not** 过滤器，模块过滤不支持此功能。通过在追踪过滤器中输入 `!io`，所有包含文本 `io` 的追踪将被隐藏；通过输入 `lists|proplists`，只有包含文本 `lists` 或 `proplists` 的追踪将被显示。
 
-If the filter is empty then all data is shown.
+如果过滤器为空，则显示所有数据。
 
-Show functions that are currently traced by setting `#t` as the function filter.
+通过将 `#t` 设置为函数过滤器来显示当前被追踪的函数。
 
-##### Trace between restarts
+##### 重启之间的追踪
 
-When the target node VM gets restarted, erlyberly tries to reconnect and reapply the traces you had previously set.  This is great for your dev workflow.  Make a change, restart and your traces will be there waiting for you to retest.
+当目标节点 VM 重启时，erlyberly 会尝试重新连接并重新应用你之前设置的追踪。这对你的开发工作流程非常有用。进行更改、重启，你的追踪就会在那里等待你重新测试。
 
-If you hotload code during development either manually or using a reloader like [sync](https://github.com/rustyio/sync) then you may notice that reloading a module removes all traces on it.  erlyberly listens for modules being reloaded and reapplies any traces that were previously applied to it, without interrupting you!
+如果你在开发过程中手动或使用像 [sync](https://github.com/rustyio/sync) 这样的重载器热加载代码，那么你可能会注意到重新加载模块会移除其上的所有追踪。erlyberly 会监听模块的重新加载并重新应用之前应用于它的任何追踪，而不会打断你！
 
-##### See graphs for process memory usage
+##### 查看进程内存使用图表
 
-Open up the process table, next to the memory usage columns there is a pie chart icon.  Clicking one of these icons shows the memory usage of all the processes that were selected in the table.
+打开进程表，在内存使用列旁边有一个饼图图标。点击这些图标之一可以显示表中选定的所有进程的内存使用情况。
 
-![you cannot see the beautiful screen shot](doc/heap-pie.png)
+![你看不到美丽的屏幕截图](doc/heap-pie.png)
 
-##### View the source code for modules and functions
+##### 查看模块和函数的源代码
 
-View the source code for a module by right clicking on a module and selecting `View Source Code`. If a function is selected then only source for that function will be shown.
+通过右键单击模块并选择 `View Source Code` 来查看模块的源代码。如果选择了函数，则只显示该函数的源代码。
 
-![you cannot see the beautiful screen shot](doc/view-source.png)
+![你看不到美丽的屏幕截图](doc/view-source.png)
 
-The source code that is shown by erlyberly is decompiled from the beam file, not what was actually compiled so comments and code that was excluded with an `ifdef` will be ommitted.
+erlyberly 显示的源代码是从 beam 文件反编译而来的，而不是实际编译的内容，因此注释和通过 `ifdef` 排除的代码将被省略。
 
-##### View the abstract source code for modules and functions
+##### 查看模块和函数的抽象源代码
 
-View the abstract source code for a module by right clicking on a module or function and selecting `View Abstract Code`. The beam file for the module must exist and it must have been compiled with `+debug_info` or the source code will not 
+通过右键单击模块或函数并选择 `View Abstract Code` 来查看模块的抽象源代码。模块的 beam 文件必须存在，并且必须使用 `+debug_info` 进行编译，否则源代码将不会显示。
 
-![you cannot see the beautiful screen shot](doc/view-abstract-source.png)
+![你看不到美丽的屏幕截图](doc/view-abstract-source.png)
 
-Abstract code is an erlang term representation of a beam file. You can use it to see how a module is compiled. One use case is to make sure that variables that you think will made constants in the beam code do actually get compiled that way.
+抽象代码是 beam 文件的 Erlang 术语表示。你可以用它来查看模块是如何编译的。一个用例是确保你认为会在 beam 代码中成为常量的变量确实以这种方式编译。
 
-##### View the call graph for a function
+##### 查看函数的调用图
 
-See what functions another function calls by right clicking on it and clicking `View Call Graph`.  This is helpful to understand dependencies of functions.
+通过右键单击函数并单击 `View Call Graph` 来查看另一个函数调用了哪些函数。这有助于理解函数的依赖关系。
 
-![you cannot see the beautiful screen shot](doc/call-graph.png)
+![你看不到美丽的屏幕截图](doc/call-graph.png)
 
-The `View Call Graph` option is disabled until the you have clicked the `xref Analysis' button at the top of the window and it shows **ok** in green. This is because xref must analyse all of the modules loaded by the VM which can take a while. You may see xref output in the console while xref performs analysis.
+在你点击顶部的 `xref Analysis` 按钮并看到绿色的 **ok** 之前，`View Call Graph` 选项是被禁用的。这是因为 xref 必须分析 VM 加载的所有模块，这可能需要一些时间。在 xref 执行分析时，你可能会在控制台中看到 xref 输出。
 
-Traces can be applied to all functions in a call graph by right clicking and selecting `Recursive Trace`.  Traces will be applied recursively to all functions by the selected function in the graph.  This can be used to find a function that is throwing an exception when a stack trace is not  available. The function throwing the exception will appear in the trace list in red.
+可以通过右键单击并选择 `Recursive Trace` 来对调用图中的所有函数应用追踪。追踪将递归地应用于图中所选函数的所有函数。这可用于在无法获得堆栈跟踪时找到抛出异常的函数。抛出异常的函数将以红色出现在追踪列表中。
 
-##### Get notified of crash reports
+##### 接收崩溃报告通知
 
-When an OTP process dies it generates a crash report which is typically logged to a file by lager or sasl. Erlyberly acts as another crash report handler and displays the number of crash reports in red, next to the `Crash Report` button.
+当 OTP 进程死亡时，它会生成一个崩溃报告，通常由 lager 或 sasl 记录到文件中。Erlyberly 充当另一个崩溃报告处理器，并在 `Crash Report` 按钮旁边以红色显示崩溃报告的数量。
 
-![you cannot see the beautiful screen shot](doc/crash-report-button.png)
+![你看不到美丽的屏幕截图](doc/crash-report-button.png)
 
-Click the button to view the crash reports and clear the notifications displayed in the button.  Double click on them to view in more detail.
+点击按钮可查看崩溃报告并清除按钮中显示的通知。双击它们以查看更多详细信息。
 
-##### Cross platform
+##### 跨平台
 
-Tested on OSX, Linux Ubuntu, RHEL and CentOS.
+已在 OSX、Linux Ubuntu、RHEL 和 CentOS 上测试。
 
-### Shortcuts
+### 快捷键
 
-On OSX all shortcuts use `cmd` instead of `ctrl`.
+在 OSX 上，所有快捷键使用 `cmd` 而不是 `ctrl`。
 
-|      Keys      |                                           Action                                           |
+|      按键      |                                           动作                                           |
 | -------------- | :----------------------------------------------------------------------------------------: |
-| `escape`       |                                     Close sub windows.                                     |
-| `ctrl+f`       |       Focus on the last focused filter field, or the next if one is already focused.       |
-| `ctrl+m`       |                        Toggle visibility of modules and functions.                         |
-| `ctrl+n`       |                                     Clear trace logs                                       |
-| `ctrl+p`       |                              Toggle visibility of processes.                               |
-| `ctrl+t`       |                Toggle tracing for the selected function in the module tree.                |
-| `ctrl+shift+t` | Press in the module/function filter field to apply traces to all functions that have not been filtered. |
+| `escape`       |                                     关闭子窗口。                                     |
+| `ctrl+f`       |       聚焦到最后聚焦的过滤器字段，或者如果已经聚焦了一个，则聚焦下一个。       |
+| `ctrl+m`       |                        切换模块和函数的可见性。                         |
+| `ctrl+n`       |                                     清除追踪日志                                       |
+| `ctrl+p`       |                              切换进程的可见性。                               |
+| `ctrl+t`       |                切换模块树中所选函数的追踪。                |
+| `ctrl+shift+t` | 在模块/函数过滤器字段中按下以对所有未被过滤的函数应用追踪。 |
 
-### Trouble Shooting
+### 故障排除
 
 
-##### Cannot connect or Name server errors on connection
-erlyberly must have epmd running on the machine as it is running. Otherwise it will not be able to connect to the remote node with an error about Name Servers. The easiest way to run epmd is to run the following command in the shell `erl -sname hi`, this requires erlang to be installed and on the `PATH`.
+##### 无法连接或连接时的名称服务器错误
+erlyberly 必须在机器上运行 epmd，因为它正在运行。否则它将无法连接到远程节点，出现关于名称服务器的错误。运行 epmd 的最简单方法是在 shell 中运行以下命令 `erl -sname hi`，这需要安装 Erlang 并将其添加到 `PATH` 中。
 
-This can also happen if erls `-name` parameter is used but without a hostname, see [#108](https://github.com/andytill/erlyberly/issues/108). For example.
+如果使用了 erls `-name` 参数但没有主机名，也会发生这种情况，参见 [#108](https://github.com/andytill/erlyberly/issues/108)。例如：
 
     erl -name mynode
 
-The fix is to specify the hostname or user `-sname`.
+解决方法是指定主机名或使用 `-sname`。
 
     erl -name mynode@localhost
 
-##### Cannot start, `NoSuchMethodException` is thrown
-This happens when java version 8 is installed but the update is less than 20. Please update your version of java. See issue [#39](https://github.com/andytill/erlyberly/issues/39).
+##### 无法启动，抛出 `NoSuchMethodException`
+当安装了 Java 版本 8 但更新版本低于 20 时会发生这种情况。请更新你的 Java 版本。参见问题 [#39](https://github.com/andytill/erlyberly/issues/39)。
 
-### Roadmap
+### 路线图
 
-Some things that are important.
+一些重要的事情。
 
-1. Bug fixing and stability for current features is number one priority right now. Help by contributing issue reports.
-2. Improved elixir support.
-3. Better seq_trace support.
-4. Beat CAP.
+1. 当前功能的错误修复和稳定性是当前的首要任务。通过提交问题报告来帮助。
+2. 改进的 Elixir 支持。
+3. 更好的 seq_trace 支持。
+4. 击败 CAP。
 
-erlyberly is meant to be a complementary to observer so there will be no attempt to implement features such as the supervisor hierarchy graph.
+erlyberly 旨在作为 observer 的补充，因此不会尝试实现诸如监督者层次结构图之类的功能。
 
-### Special Thanks
+### 特别感谢
 
-The following people have contributed code to erlyberly:
+以下人员为 erlyberly 贡献了代码：
 
 + [@aboroska](https://github.com/aboroska)
 + [@ruanpienaar](https://github.com/ruanpienaar)
 + [@horvand ](https://github.com/horvand)
 
-The hex editor originated from [hexstar](https://github.com/Velocity-/Hexstar). The stack trace parsing is taken from [redbug](https://github.com/massemanet/eper). Fun decompiling is from [saleyn/util](https://github.com/saleyn/util). Tab pane drag to window is from [shichimifx](https://bitbucket.org/Jerady/shichimifx).
+十六进制编辑器源自 [hexstar](https://github.com/Velocity-/Hexstar)。堆栈跟踪解析取自 [redbug](https://github.com/massemanet/eper)。有趣的反编译来自 [saleyn/util](https://github.com/saleyn/util)。标签窗格拖动到窗口功能来自 [shichimifx](https://bitbucket.org/Jerady/shichimifx)。

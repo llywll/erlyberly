@@ -1,31 +1,21 @@
 /**
- * erlyberly, erlang trace debugger
- * Copyright (C) 2016 Andy Till
+ * ErlyBerly，Erlang 跟踪调试器
+ * 版权所有 (C) 2016 Andy Till
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * 本程序是自由软件：您可以根据自由软件基金会发布的 GNU 通用公共许可证进行 redistribut 和/或修改，
+ * 使用许可证的第 3 版，或（根据您的选择）任何更高版本。
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU General Public License for more details.
+ * 本程序的发布是希望它能有用，但不提供任何保证；甚至不包括对适销性或特定用途适用性的默示保证。
+ * 有关更多详细信息，请参阅 GNU 通用公共许可证。
  *
- * You should have received a copy of the GNU General Public License
- * along with this program. If not, see <http://www.gnu.org/licenses/>.
+ * 您应该已经收到了 GNU 通用公共许可证的副本。如果没有，请参见 <http://www.gnu.org/licenses/>。
  */
 package erlyberly;
 
 import java.io.IOException;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.TimeUnit;
 
-import erlyberly.format.ElixirFormatter;
 import erlyberly.format.ErlangFormatter;
+import erlyberly.format.ElixirFormatter;
 import erlyberly.format.LFEFormatter;
 import erlyberly.format.TermFormatter;
 import erlyberly.node.NodeAPI;
@@ -48,21 +38,14 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.stage.Modality;
 import javafx.stage.Stage;
+import javafx.stage.WindowEvent;
 
 public class ErlyBerly extends Application {
 
-    private static final ScheduledExecutorService IO_EXECUTOR = Executors.newScheduledThreadPool(4);
-
-    private static final NodeAPI NODE_API;
-
-    static {
-        startEpmd();
-        NODE_API = new NodeAPI();
-    }
+    private static final NodeAPI NODE_API = new NodeAPI();
 
     /**
-     * The preferences tab, that is added when the user presses the 'Preferences'
-     * button in the top bar. Static because there can be only one.
+     * 首选项选项卡，当用户按下顶部栏中的"首选项"按钮时添加。静态是因为只能有一个。
      */
     private static Tab prefstab;
 
@@ -76,33 +59,12 @@ public class ErlyBerly extends Application {
 
     private static TermFormatter termFormatter;
 
-    private static Stage primaryStage;
-
     public static void main(String[] args) throws Exception {
         launch(args);
     }
 
-    public static void runIO(Runnable runnable) {
-        IO_EXECUTOR.execute(runnable);
-    }
-
-    public static void runIOAndWait(Runnable runnable) {
-        Future<?> future = IO_EXECUTOR.submit(runnable);
-        try {
-            future.get();
-        }
-        catch (Exception e) {
-            e.printStackTrace();
-        }
-    }
-
-    public static ScheduledFuture<?> scheduledIO(long delayMillis, Runnable runnable) {
-        return IO_EXECUTOR.schedule(runnable, delayMillis, TimeUnit.MILLISECONDS);
-    }
-
     @Override
-    public void start(Stage aPrimaryStage) {
-        primaryStage = aPrimaryStage;
+    public void start(Stage primaryStage) {
         try {
             PrefBind.setup();
         } catch (IOException e) {
@@ -147,8 +109,7 @@ public class ErlyBerly extends Application {
             }
         });
 
-        // the window size needs to be set before the scene is added or else it
-        // counts as a window resize and that also resizes the split panes
+        // 窗口大小需要在添加场景之前设置，否则会被计为窗口调整大小，这也会调整拆分窗格的大小
         final double windowWidth = PrefBind.getOrDefaultDouble("windowWidth", 800D);
         primaryStage.setWidth(windowWidth);
         primaryStage.widthProperty().addListener((o, ov, nv) -> {
@@ -167,24 +128,23 @@ public class ErlyBerly extends Application {
         primaryStage.setResizable(true);
         primaryStage.show();
 
-        displayConnectionPopup();
+        displayConnectionPopup(primaryStage);
 
         FilterFocusManager.init(scene);
 
-        primaryStage.setOnCloseRequest((windowEvent) -> {
-            ErlyBerly.runIOAndWait(() -> {
+        primaryStage.setOnCloseRequest(new EventHandler<WindowEvent>() {
+            @Override
+            public void handle(WindowEvent t) {
                 try {
                     nodeAPI().manuallyDisconnect();
-                }
-                catch(Exception e) {
+                } catch(Exception e) {
                     System.out.println(e);
                 }
-            });
-            Platform.exit();
-            System.exit(0);
+                Platform.exit();
+                System.exit(0);
+            }
         });
-        // run this later because it requires the control's scene to be set, which
-        // may not have happened yet.
+        // 稍后运行这个，因为它需要控件的场景已设置，而这可能尚未发生。
         Platform.runLater(() -> {
             sizeSplitPanes(splitPane);
             dbgView.sizeSplitPanes();
@@ -266,37 +226,29 @@ public class ErlyBerly extends Application {
         return entopPane;
     }
 
-    public static void displayConnectionPopup() {
-        Scene scene = new Scene(new ConnectionView());
-
-        // close the app when escape is pressed on the connection window
-        scene.setOnKeyPressed((e) -> {
-            if(e.getCode() == KeyCode.ESCAPE) {
-               Stage aStage = (Stage) scene.getWindow();
-               aStage.close();
-               primaryStage.close();
-            }
-        });
-        applyCssToWIndow(scene);
-
+    private void displayConnectionPopup(Stage primaryStage) {
         Stage connectStage;
+
         connectStage = new Stage();
         connectStage.initModality(Modality.WINDOW_MODAL);
-        connectStage.setScene(scene);
+        connectStage.setScene(new Scene(new FxmlLoadable("/erlyberly/connection.fxml").load()));
         connectStage.setAlwaysOnTop(true);
 
         // javafx vertical resizing is laughably ugly, lets just disallow it
-        //connectStage.setResizable(false);
-        connectStage.setWidth(800d);
-        connectStage.setHeight(400d);
-        connectStage.setTitle("Connect to Remote Node");
+        connectStage.setResizable(false);
+        connectStage.setWidth(400);
+
         // if the user closes the window without connecting then close the app
-        connectStage.setOnCloseRequest((e) -> {
-            if(!NODE_API.connectedProperty().get()) {
-                Platform.exit();
-            }
-            Platform.runLater(() -> { primaryStage.setResizable(true); });
-        });
+        connectStage.setOnCloseRequest(new EventHandler<WindowEvent>() {
+            @Override
+            public void handle(WindowEvent e) {
+                if(!NODE_API.connectedProperty().get()) {
+                    Platform.exit();
+                }
+
+                Platform.runLater(() -> { primaryStage.setResizable(true); });
+            }});
+
         connectStage.show();
     }
 
@@ -305,7 +257,7 @@ public class ErlyBerly extends Application {
     }
 
     /**
-     * Show a new control in the tab pane. The tab is closable.
+     * 在选项卡面板中显示一个新的控件。该选项卡可关闭。
      */
     public static void showPane(String title, Pane parentControl) {
         assert Platform.isFxApplicationThread();
@@ -326,7 +278,7 @@ public class ErlyBerly extends Application {
             FxmlLoadable fxmlLoadable = new FxmlLoadable("/erlyberly/preferences.fxml");
             Parent parent = fxmlLoadable.load();
             Pane tabPane = ErlyBerly.wrapInPane(parent);
-            prefstab = new Tab("Preferences");
+            prefstab = new Tab("首选项");
             prefstab.setContent(tabPane);
         }
 
@@ -339,7 +291,7 @@ public class ErlyBerly extends Application {
     }
 
     /**
-     * All I know is pane.
+     * 我只知道 Pane。
      */
     public static Pane wrapInPane(Node node) {
         if(node instanceof Pane)
@@ -371,8 +323,8 @@ public class ErlyBerly extends Application {
         catch (NumberFormatException e) {
             e.printStackTrace();
         }
-        // whenever the width of the pane changes, write it to configuration
-        // this is buffered so rapid writes do not cause rapid writes to disk
+        // 每当窗格的宽度改变时，将其写入配置
+        // 这是缓冲的，所以快速写入不会导致快速写入磁盘
         entopPane.widthProperty().addListener((o, ov, nv) -> {
             PrefBind.set("processesWidth", nv);
         });
@@ -381,18 +333,5 @@ public class ErlyBerly extends Application {
     private double configuredProcessesWidth() {
         double w = PrefBind.getOrDefaultDouble("processesWidth", 300D);
         return w;
-    }
-
-    private static void startEpmd() {
-        try {
-            Process epmd = Runtime.getRuntime().exec("epmd -daemon");
-            int exitV = epmd.waitFor();
-            if (exitV != 0) {
-                System.err.println(
-                        "Epmd process finished with exit value: " + exitV);
-            }
-        } catch (Exception e) {
-            System.err.println("Failed to start epmd: " + e);
-        }
     }
 }

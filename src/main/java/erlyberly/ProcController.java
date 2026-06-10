@@ -25,7 +25,7 @@ import java.util.Comparator;
 import com.ericsson.otp.erlang.OtpErlangException;
 import com.ericsson.otp.erlang.OtpErlangObject;
 
-import erlyberly.node.RpcCallback;
+import erlyberly.node.NodeAPI.RpcCallback;
 import javafx.application.Platform;
 import javafx.beans.property.SimpleBooleanProperty;
 import javafx.beans.property.SimpleObjectProperty;
@@ -231,6 +231,13 @@ public class ProcController {
         new ProcessStateThread(proc.getPid(), callback).start();
     }
 
+    /**
+     * 获取进程字典
+     */
+    public void processDictionary(ProcInfo proc, RpcCallback<OtpErlangObject> callback) {
+        new ProcessDictionaryThread(proc.getPid(), callback).start();
+    }
+
     class ProcessStateThread extends Thread {
 
         private final String pidString;
@@ -241,7 +248,7 @@ public class ProcController {
             callback = aCallback;
 
             setDaemon(true);
-            setName("Erlyberly Get Process State");
+            setName("ErlyBerly 获取进程状态");
         }
 
         @Override
@@ -250,6 +257,35 @@ public class ProcController {
                 OtpErlangObject processState = ErlyBerly.nodeAPI().getProcessState(pidString);
 
                 Platform.runLater(() -> { callback.callback(processState); });
+            }
+            catch (OtpErlangException | IOException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+    /**
+     * 获取进程字典的线程
+     */
+    class ProcessDictionaryThread extends Thread {
+
+        private final String pidString;
+        private final RpcCallback<OtpErlangObject> callback;
+
+        public ProcessDictionaryThread(String aPidString, RpcCallback<OtpErlangObject> aCallback) {
+            pidString = aPidString;
+            callback = aCallback;
+
+            setDaemon(true);
+            setName("ErlyBerly 获取进程字典");
+        }
+
+        @Override
+        public void run() {
+            try {
+                OtpErlangObject processDict = ErlyBerly.nodeAPI().getProcessDictionary(pidString);
+
+                Platform.runLater(() -> { callback.callback(processDict); });
             }
             catch (OtpErlangException | IOException e) {
                 e.printStackTrace();

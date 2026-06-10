@@ -27,6 +27,8 @@ import java.util.Set;
 import com.ericsson.otp.erlang.OtpConn;
 import com.ericsson.otp.erlang.OtpErlangAtom;
 import com.ericsson.otp.erlang.OtpErlangBinary;
+import com.ericsson.otp.erlang.OtpErlangDecodeException;
+import com.ericsson.otp.erlang.OtpErlangExit;
 import com.ericsson.otp.erlang.OtpErlangExternalFun;
 import com.ericsson.otp.erlang.OtpErlangFun;
 import com.ericsson.otp.erlang.OtpErlangList;
@@ -108,7 +110,7 @@ public class OtpUtil {
 
 
     public static OtpErlangAtom atom(String name) {
-        return new OtpErlangAtom(name.intern());
+        return new OtpErlangAtom(name);
     }
 
     /**
@@ -190,6 +192,14 @@ public class OtpUtil {
         conn.send(m.self(), "rex", rpcMessage);
     }
 
+    public static OtpErlangTuple receiveRPC(OtpMbox mbox) throws OtpErlangExit, OtpErlangDecodeException  {
+        return receiveRPC(mbox,5000);
+    }
+
+    public static OtpErlangTuple receiveRPC(OtpMbox mbox ,long timeout) throws OtpErlangExit, OtpErlangDecodeException {
+        return (OtpErlangTuple) mbox.receive(timeout);
+    }
+
     public static OtpErlangObject tupleElement(int i, OtpErlangObject obj) {
         return ((OtpErlangTuple)obj).elementAt(i);
     }
@@ -202,10 +212,6 @@ public class OtpUtil {
         else if(obj instanceof OtpErlangString) {
             OtpErlangString s = (OtpErlangString) obj;
             return new OtpErlangList(s.stringValue()).elements();
-        }
-        else if(obj instanceof OtpErlangMap){
-            OtpErlangMap m = (OtpErlangMap) obj;
-            return new OtpErlangList(m.keys()).elements();
         }
         else {
             throw new RuntimeException("" + obj + " cannot return OtpErlangObject[]");

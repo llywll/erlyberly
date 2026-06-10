@@ -21,9 +21,9 @@ import java.util.Map;
 import java.util.Objects;
 
 import com.ericsson.otp.erlang.OtpErlangAtom;
-import com.ericsson.otp.erlang.OtpErlangList;
 import com.ericsson.otp.erlang.OtpErlangLong;
 import com.ericsson.otp.erlang.OtpErlangString;
+import com.ericsson.otp.erlang.OtpErlangTuple;
 
 import javafx.beans.property.LongProperty;
 import javafx.beans.property.SimpleLongProperty;
@@ -43,11 +43,9 @@ public class ProcInfo implements Comparable<ProcInfo> {
 
     private static final OtpErlangAtom MSG_QUEUE_LEN_ATOM = new OtpErlangAtom("message_queue_len");
 
-    private static final OtpErlangList EMPTY_LIST = new OtpErlangList();
+    private static final OtpErlangAtom FALSE_ATOM = new OtpErlangAtom("false");
 
-    private static final OtpErlangAtom REGISTERED_NAME_ATOM = new OtpErlangAtom("registered_name");
-
-    private static final OtpErlangAtom GLOBAL_NAME_ATOM = new OtpErlangAtom("global_name");
+    private static final OtpErlangAtom NAME_ATOM = new OtpErlangAtom("name");
 
     private static final OtpErlangAtom PID_ATOM = new OtpErlangAtom("pid");
 
@@ -166,19 +164,30 @@ public class ProcInfo implements Comparable<ProcInfo> {
     }
 
     public static ProcInfo toProcessInfo(Map<Object, Object> propList) {
-        Object processName = propList.get(REGISTERED_NAME_ATOM);
         Object pid = ((OtpErlangString) propList.get(PID_ATOM)).stringValue();
 
-        if(EMPTY_LIST.equals(processName)) {
-            processName = "";
+        // 解析进程名（Erlang 端已合并为 name 键，可能是注册名或 initial_call）
+        String displayName = "";
+        Object nameObj = propList.get(NAME_ATOM);
+        if (nameObj instanceof OtpErlangAtom) {
+            OtpErlangAtom nameAtom = (OtpErlangAtom) nameObj;
+            // 忽略 false（proc_lib:translate_initial_call 无法翻译时返回）和 undefined
+            if (!FALSE_ATOM.equals(nameAtom)) {
+                displayName = nameAtom.atomValue();
+            }
+        } else if (nameObj instanceof OtpErlangTuple) {
+            OtpErlangTuple mfaTuple = (OtpErlangTuple) nameObj;
+            if (mfaTuple.arity() == 3) {
+                displayName = mfaToString(mfaTuple);
+            }
+        } else if (nameObj != null) {
+            displayName = Objects.toString(nameObj, "");
         }
 
         ProcInfo processInfo;
 
         processInfo = new ProcInfo();
-        String localName = Objects.toString(processName, "");
-        String globalName = Objects.toString(propList.get(GLOBAL_NAME_ATOM), "");
-        processInfo.setProcessName(localName + ("".equals(localName) ? "" : " ") + ("".equals(globalName) ? "" : "(" + globalName + ")"));
+        processInfo.setProcessName(displayName);
         processInfo.setPid(Objects.toString(pid, ""));
         processInfo.setReductions(toLong(propList.get(REDUCTIONS_ATOM)));
         processInfo.setMsgQueueLen(toLong(propList.get(MSG_QUEUE_LEN_ATOM)));
@@ -187,6 +196,36 @@ public class ProcInfo implements Comparable<ProcInfo> {
         processInfo.setTotalHeapSize(toLong(propList.get(TOTAL_HEAP_SIZE_ATOM)));
 
         return processInfo;
+    }
+
+    private static String mfaToString(OtpErlangTuple mfaTuple) {
+        String mod;
+        String func;
+        String arity;
+
+        Object modObj = mfaTuple.elementAt(0);
+        Object funcObj = mfaTuple.elementAt(1);
+        Object arityObj = mfaTuple.elementAt(2);
+
+        if (modObj instanceof OtpErlangAtom) {
+            mod = ((OtpErlangAtom) modObj).atomValue();
+        } else {
+            mod = modObj.toString();
+        }
+
+        if (funcObj instanceof OtpErlangAtom) {
+            func = ((OtpErlangAtom) funcObj).atomValue();
+        } else {
+            func = funcObj.toString();
+        }
+
+        if (arityObj instanceof OtpErlangLong) {
+            arity = String.valueOf(((OtpErlangLong) arityObj).longValue());
+        } else {
+            arity = arityObj.toString();
+        }
+
+        return mod + ":" + func + "/" + arity;
     }
 
     private static long toLong(Object object) {

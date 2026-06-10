@@ -17,11 +17,9 @@
  */
 package erlyberly;
 
-import com.ericsson.otp.erlang.OtpErlangAtom;
 import com.ericsson.otp.erlang.OtpErlangList;
 import com.ericsson.otp.erlang.OtpErlangObject;
 
-import erlyberly.node.OtpUtil;
 import floatyfield.FloatyFieldView;
 import javafx.application.Platform;
 import javafx.beans.value.ChangeListener;
@@ -95,37 +93,37 @@ public class DbgTraceView extends VBox {
     @SuppressWarnings({ "unchecked", "rawtypes" })
     private void putTableColumns() {
         TableColumn<TraceLog,Long> seqColumn;
-        seqColumn = new TableColumn<TraceLog,Long>("Seq.");
+        seqColumn = new TableColumn<TraceLog,Long>("序号");
         seqColumn.setCellValueFactory(new PropertyValueFactory("instanceNum"));
         configureColumnWidth("seqColumnWidth", seqColumn);
 
         TableColumn<TraceLog,String> pidColumn;
-        pidColumn = new TableColumn<TraceLog,String>("Pid");
-        pidColumn.setCellValueFactory(new PropertyValueFactory("pidString"));
+        pidColumn = new TableColumn<TraceLog,String>("进程ID");
+        pidColumn.setCellValueFactory(new PropertyValueFactory("pid"));
         configureColumnWidth("pidColumnWidth", pidColumn);
 
         TableColumn<TraceLog,String> regNameColumn;
-        regNameColumn = new TableColumn<TraceLog,String>("Reg. Name");
+        regNameColumn = new TableColumn<TraceLog,String>("注册名称");
         regNameColumn.setCellValueFactory(new PropertyValueFactory("regName"));
         configureColumnWidth("regNameColumnWidth", regNameColumn);
 
         TableColumn<TraceLog,String> durationNameColumn;
-        durationNameColumn = new TableColumn<TraceLog,String>("Duration (microseconds)");
+        durationNameColumn = new TableColumn<TraceLog,String>("持续时间(微秒)");
         durationNameColumn.setCellValueFactory(new PropertyValueFactory("duration"));
         configureColumnWidth("durationNameColumnWidth", durationNameColumn);
 
         TableColumn<TraceLog,String> functionNameColumn;
-        functionNameColumn = new TableColumn<TraceLog,String>("Function");
+        functionNameColumn = new TableColumn<TraceLog,String>("函数");
         functionNameColumn.setCellValueFactory(new PropertyValueFactory("function"));
         configureColumnWidth("functionNameColumnWidth", functionNameColumn);
 
         TableColumn<TraceLog,String> argsColumn;
-        argsColumn = new TableColumn<TraceLog,String>("Args");
+        argsColumn = new TableColumn<TraceLog,String>("参数");
         argsColumn.setCellValueFactory(new PropertyValueFactory("args"));
         configureColumnWidth("argsColumnWidth", argsColumn);
 
         TableColumn<TraceLog,String> resultColumn;
-        resultColumn = new TableColumn<TraceLog,String>("Result");
+        resultColumn = new TableColumn<TraceLog,String>("结果");
         resultColumn.setCellValueFactory(new PropertyValueFactory("result"));
         configureColumnWidth("resultColumnWidth", resultColumn);
 
@@ -218,10 +216,8 @@ public class DbgTraceView extends VBox {
 
         resultTermsTreeView = newTermTreeView();
 
-        OtpErlangAtom moduleName = OtpUtil.atom(traceLog.getModFunc().getModuleName());
-
         if(result != null) {
-            resultTermsTreeView.populateFromTerm(moduleName, traceLog.getResultFromMap());
+            resultTermsTreeView.populateFromTerm(traceLog.getResultFromMap());
         }
         else {
             WeakChangeListener<Boolean> listener = new WeakChangeListener<Boolean>((o, oldV, newV) -> {
@@ -233,21 +229,21 @@ public class DbgTraceView extends VBox {
         }
 
         argTermsTreeView = newTermTreeView();
-        argTermsTreeView.populateFromListContents(moduleName, (OtpErlangList)args);
+        argTermsTreeView.populateFromListContents((OtpErlangList)args);
 
         SplitPane splitPane, splitPaneH;
 
         splitPane = new SplitPane();
         splitPane.setOrientation(Orientation.HORIZONTAL);
         splitPane.getItems().addAll(
-            labelledTreeView("Function arguments", argTermsTreeView),
-            labelledTreeView("Result", resultTermsTreeView)
+            labelledTreeView("函数参数", argTermsTreeView),
+            labelledTreeView("结果", resultTermsTreeView)
         );
 
         StackTraceView stackTraceView;
         stackTraceView = new StackTraceView();
         stackTraceView.populateFromMfaList(traceLog.getStackTrace());
-        String stackTraceTitle = "Stack Trace (" + traceLog.getStackTrace().arity() + ")";
+        String stackTraceTitle = "堆栈跟踪 (" + traceLog.getStackTrace().arity() + ")";
         TitledPane titledPane = new TitledPane(stackTraceTitle, stackTraceView);
         titledPane.setExpanded(!stackTraceView.isStackTracesEmpty());
         splitPaneH = new SplitPane();
@@ -266,15 +262,10 @@ public class DbgTraceView extends VBox {
     }
 
     private void onTraceFilterChange(String searchText) {
-        BasicSearch search = new BasicSearch(searchText);
+        BasicSearch basicSearch = new BasicSearch(searchText);
         filteredTraces.setPredicate((t) -> {
-            boolean matches =
-                    search.matches(t.getArgs())
-                    || search.matches(t.getResult())
-                    || search.matches(t.getPidString())
-                    || search.matches(t.getRegName())
-                    || search.matches(t.getFunction());
-            return matches;
+            String logText = t.toString();
+            return basicSearch.matches(logText);
         });
     }
 
@@ -286,7 +277,7 @@ public class DbgTraceView extends VBox {
         FloatyFieldView ffView;
 
         ffView = (FloatyFieldView) loader.controller;
-        ffView.promptTextProperty().set("Filter trace logs");
+        ffView.promptTextProperty().set("过滤跟踪日志");
 
         HBox.setHgrow(loader.fxmlNode, Priority.ALWAYS);
 

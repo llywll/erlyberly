@@ -21,19 +21,20 @@
 -export([collect_trace_logs/0]).
 -export([ensure_dbg_started/2]).
 -export([ensure_xref_started/0]).
+-export([saleyn_fun_src/1]).
 -export([get_abstract_code/1]).
 -export([get_process_state/1]).
+-export([get_process_dictionary/1]).
+-export([get_ets_tables/0]).
+-export([get_ets_table_info/1]).
 -export([get_source_code/1]).
 -export([load_modules_on_path/1]).
--export([load_module_records/1]).
 -export([module_functions/0]).
 -export([process_info/0]).
--export([saleyn_fun_src/1]).
 -export([seq_trace/5]).
 -export([start_trace/5]).
 -export([stop_trace/4]).
 -export([stop_traces/0]).
--export([try_load_module/1]).
 -export([xref_analysis/4]).
 
 %% exported for spawned processes
@@ -79,37 +80,30 @@ process_info2([undefined | Tail], Acc) ->
     process_info2(Tail, Acc);
 process_info2([Proc | Tail], Acc) ->
     Props = erlang:process_info(Proc, [registered_name,
+                                       initial_call,
                                        reductions,
                                        message_queue_len,
                                        heap_size,
                                        stack_size,
                                        total_heap_size]),
     Acc1 = case Props of
-               undefined -> 
+               undefined ->
                    Acc;
-               _ -> 
-                   Props1 = add_global_name(Proc, Props),
-                   Props2 = [{pid, pid_to_list(Proc)} | size_props_to_bytes(Props1)],
-                   [Props2 | Acc]
+               [{registered_name, RegisteredName}, {initial_call, InitialCall} | T] ->
+                   Name = case RegisteredName of
+                              [] -> initial_call(InitialCall, Proc);
+                              false -> initial_call(InitialCall, Proc);
+                              _ -> RegisteredName
+                          end,
+                   Props3 = [{pid, pid_to_list(Proc)} | size_props_to_bytes([{name, Name} | T])],
+                   [Props3 | Acc]
            end,
     process_info2(Tail, Acc1).
 
-add_global_name(Proc, Props) ->
-    case find_global_name(Proc) of
-        not_found ->
-            Props;
-        Name ->
-            [{global_name, Name} | Props]
-    end.
-
-find_global_name(Pid) ->
-    Names = [Name || Name <- global:registered_names(), global:whereis_name(Name) =:= Pid],
-    case Names of
-        [] ->
-            not_found;
-        [Name] ->
-            Name
-    end.
+initial_call({proc_lib, init_p, _}, Pid) ->
+    proc_lib:translate_initial_call(Pid);
+initial_call(Initial, _Pid) ->
+    Initial.
 
 size_props_to_bytes(Props) ->
     [size_to_bytes(KV) || KV <- Props].
@@ -129,12 +123,102 @@ get_process_state(Pid_string) when is_list(Pid_string) ->
             {ok, State}
     end.
 
+%% 获取进程字典
+get_process_dictionary(Pid_string) when is_list(Pid_string) ->
+    try
+        Pid = list_to_pid(Pid_string),
+        Dict = erlang:process_info(Pid, dictionary),
+        case Dict of
+            {dictionary, DictList} ->
+                {ok, DictList};
+            _ ->
+                {error, no_dictionary}
+        end
+    catch
+        Error:Reason:_Stacktrace ->
+            {error, lists:flatten(io_lib:format("Error: ~p, Reason: ~p", [Error, Reason]))}
+    end.
+
+%% 获取所有 ETS 表列表
+get_ets_tables() ->
+    try
+        Tables = ets:all(),
+        TableInfos = [begin
+            Info = ets:info(Tab),
+            Name = proplists:get_value(name, Info),
+            Type = proplists:get_value(type, Info),
+            Size = proplists:get_value(size, Info),
+            Memory = proplists:get_value(memory, Info),
+            Owner = proplists:get_value(owner, Info),
+            NamedTable = proplists:get_value(named_table, Info),
+            OwnerInfo = get_owner_info(Owner),
+            [{name, Name}, 
+             {type, Type}, 
+             {size, Size}, 
+             {memory, Memory}, 
+             {owner, OwnerInfo},
+             {named_table, NamedTable}]
+        end || Tab <- Tables, 
+                   (proplists:get_value(name, ets:info(Tab))) =/= undefined],
+        {ok, TableInfos}
+    catch
+        Error:Reason:_Stacktrace ->
+            {error, lists:flatten(io_lib:format("Error: ~p, Reason: ~p", [Error, Reason]))}
+    end.
+
+%% 获取进程所有者信息（PID + 注册名）
+get_owner_info(Pid) when is_pid(Pid) ->
+    PidStr = pid_to_list(Pid),
+    RegName = case get_registered_name(Pid) of
+        undefined -> "";
+        Name -> atom_to_list(Name)
+    end,
+    {owner_pid, PidStr, owner_name, RegName};
+get_owner_info(_) ->
+    unknown.
+
+%% 获取 ETS 表的详细信息（前100条记录）
+get_ets_table_info(TableName) when is_atom(TableName) ->
+    try
+        %% 检查表是否存在
+        case ets:info(TableName) of
+            undefined ->
+                {error, table_not_found};
+            _Info ->
+                %% 获取表中的所有键
+                Keys = ets:first(TableName),
+                Rows = get_ets_rows(TableName, Keys, 0, 100),
+                {ok, Rows}
+        end
+    catch
+        Error:Reason:_Stacktrace ->
+            {error, lists:flatten(io_lib:format("Error: ~p, Reason: ~p", [Error, Reason]))}
+    end;
+get_ets_table_info(TableName) when is_list(TableName) ->
+    get_ets_table_info(list_to_atom(TableName)).
+
+%% 递归获取 ETS 表的行数据
+get_ets_rows(_Tab, '$end_of_table', _Count, _Max) ->
+    [];
+get_ets_rows(_Tab, _Key, Count, Max) when Count >= Max ->
+    [{truncated, true}];
+get_ets_rows(Tab, Key, Count, Max) ->
+    case ets:lookup(Tab, Key) of
+        [] ->
+            Next = ets:next(Tab, Key),
+            get_ets_rows(Tab, Next, Count, Max);
+        [Object] ->
+            Next = ets:next(Tab, Key),
+            [Object | get_ets_rows(Tab, Next, Count + 1, Max)]
+    end.
+
 %%
 format_record(Rec, Mod) when is_list(Rec) ->
     [format_record(R, Mod) || R <- Rec];
 format_record(Rec, Mod) when is_atom(element(1, Rec)) ->
     try
-        {ok, Forms} = load_module_forms(Mod),
+        File = code:which(Mod),
+        {ok,{_Mod,[{abstract_code,{_Version,Forms}},{"CInf",_CB}]}} = beam_lib:chunks(File, [abstract_code,"CInf"]),
         [Name | RecValues] = tuple_to_list(Rec),
         [FieldNames] = [record_fields(Fields) || {attribute,_,record,{Tag,Fields}} <- Forms, Tag =:= Name],
         FieldsAsTuples = lists:zipwith(
@@ -155,41 +239,8 @@ record_fields([{record_field,_,{atom,_,Field}} | Fs]) ->
     [Field | record_fields(Fs)];
 record_fields([{record_field,_,{atom,_,Field},_} | Fs]) ->
     [Field | record_fields(Fs)];
-record_fields([{typed_record_field, {record_field,_,{atom,_,Field}}, _} | Fs]) ->
-    [Field | record_fields(Fs)];
-record_fields([{typed_record_field, {record_field,_,{atom,_,Field},_}, _} | Fs]) ->
-    [Field | record_fields(Fs)];
 record_fields([]) ->
     [].
-
-load_module_forms(Mod) ->
-    BeamPath = code:which(Mod),
-    case beam_lib:chunks(BeamPath, [abstract_code]) of
-        {ok,{_Mod,[{abstract_code,{_Version,Forms}}]}} ->
-            {ok, Forms};
-        Error -> %% no beam file or no abstract code, try source
-            CompileInfo = Mod:module_info(compile),
-            case [ Src || {source, Src} <- CompileInfo ] of
-                [SrcPath] ->
-                    Includes = [IPath || {options, COpts} <- CompileInfo,
-                                          {i, IPath} <- COpts],
-                    Macros = [Macro || {options, COpts} <- CompileInfo,
-                                       {d, Macro} <- COpts] ++
-                             [{Macro, Value} || {options, COpts} <- CompileInfo,
-                                                {d, Macro, Value} <- COpts],
-                    epp:parse_file(SrcPath, Includes, Macros);
-                [] -> Error
-            end
-    end.
-
-%% get the records for a module.
-%%
-%% (derp@mac)4> erlyberly:load_module_records(gen_event).
-%% [{handler,[module,id,state,supervised]}]
-load_module_records(Mod) ->
-    {ok, Forms} = load_module_forms(Mod),
-    Records = [{Tag, record_fields(Fields)} || {attribute,_,record,{Tag,Fields}} <- Forms],
-    {ok, Records}.
 
 %%% ============================================================================
 %%% module function tree
@@ -204,6 +255,7 @@ module_functions2(Mod) when is_atom(Mod) ->
     Exports = Mod:module_info(exports),
     Unexported = [F || F <- Mod:module_info(functions), not lists:member(F, Exports)],
     {Mod, Exports, Unexported}.
+
 
 %%% ============================================================================
 %%% tracing
@@ -228,14 +280,10 @@ start_trace({Node, Pid}, Mod, Func, Arity, Max_queue_len) when is_atom(Node),
 
 %%
 stop_trace(Mod, Func, Arity, _IsExported) ->
-    %% FIXME do a receive to make sure that the call was successful
-    erlyberly_tcollector ! {stop_trace, Mod, Func, Arity},
-    ok.
+    erlyberly_tcollector ! {stop_trace, Mod, Func, Arity}.
 %%
 stop_traces() ->
-    %% FIXME do a receive to make sure that the call was successful
-    erlyberly_tcollector ! stop_traces,
-    ok.
+    erlyberly_tcollector ! stop_traces.
 %%
 when_process_is_unregistered(ProcName, Fn) ->
     case whereis(ProcName) of
@@ -293,7 +341,7 @@ erlyberly_tcollector2(#tcollector{ ui_pid = UI_pid, max_queue_len = Max_queue_le
     case process_info(self(), message_queue_len) of
         {message_queue_len, Queue_len} when Queue_len > Max_queue_len ->
             %% io:format("~nSTOPPING TRACING, Queue Len: ~p, Max Len: ~p~n", [Queue_len, Max_queue_len]),
-            ok = dbg:stop_clear(),
+            ok = dbg:stop(),
             UI_pid ! {erlyberly_trace_overload, Queue_len},
             collect_overloading_logs(Max_queue_len, TC);
         _ ->
@@ -322,8 +370,7 @@ collect_overloading_logs(Max_queue_len, TC) ->
 
 receive_next_trace(#tcollector{ traces = Traces } = TC) ->
     receive
-        {start_trace, Mod, Func, Arity, Requester, Ref} when is_pid(Requester),
-                                                             is_reference(Ref) ->
+        {start_trace, Mod, Func, Arity, Requester, Ref} ->
             TC1 = tcollector_start_trace(Mod, Func, Arity, TC),
             Requester ! {ok, Ref},
             erlyberly_tcollector2(TC1);
@@ -333,9 +380,9 @@ receive_next_trace(#tcollector{ traces = Traces } = TC) ->
             TC1 = TC#tcollector{ traces = Traces_1 },
             erlyberly_tcollector2(TC1);
         stop_traces ->
-            ok = dbg:stop_clear();
+            ok = dbg:stop();
         {nodedown, _Node} ->
-            ok = dbg:stop_clear();
+            ok = dbg:stop();
         Log ->
             case collect_log(Log) of
                 skip ->
@@ -460,12 +507,12 @@ trace_to_props(U) ->
 reapply_traces(Loaded_module, Traces) ->
     % filter out the traces for the reloaded, module, could be
     % done in the list comp but it causes a compiler warning
-    Traces_1 = lists:filter(fun(T) ->
+    Traces_1 = lists:filter(fun(T) -> 
                                 element(1, T) == Loaded_module 
                             end, Traces),
 
     % reapply each trace that has the loaded module
-    [erlyberly_tcollector ! {start_trace, M, F, A, self(), make_ref()} || {M, F, A} <- Traces_1],
+    [erlyberly_tcollector ! {start_trace, M, F, A} || {M, F, A} <- Traces_1],
     ok.
 %%
 collect_trace_logs() ->
@@ -567,8 +614,8 @@ start_seq_tracer({Node, _}) ->
 seq_trace_collector(Trace_logs) ->
     receive
         {nodedown, _Node} ->
-            ok = dbg:stop_clear(),
-            true = seq_trace:reset_trace();
+            ok = dbg:stop(),
+            true = seq_trace:stop();
         {seq_trace, _Label, Trace_log, Timestamp} ->
             Trace_props = seq_trace_to_props(Trace_log, Timestamp),
             seq_trace_collector([Trace_props | Trace_logs]);
@@ -661,8 +708,7 @@ seq_trace_match_spec(_) ->
 %%
 xref_analysis(Ignore_mods, M,F,A) when is_integer(A) ->
     Call_stack_set = gb_sets:new(),
-    Ignore_mods_set = gb_sets:from_list(Ignore_mods),
-    {ok, xref_analysis2({M,F,A}, Ignore_mods_set, Call_stack_set, [])}.
+    catch xref_analysis2({M,F,A}, gb_sets:from_list(Ignore_mods), Call_stack_set, []).
 
 %%
 xref_analysis2(MFA, Ignore_mods_set, All_calls, Call_stack) ->
@@ -677,7 +723,7 @@ xref_analysis2(MFA, Ignore_mods_set, All_calls, Call_stack) ->
                     All_calls2 = gb_sets:add(MFA, All_calls),
                     Analysed_calls =
                         [xref_analysis2(X_mfa, Ignore_mods_set, All_calls2, [MFA | Call_stack]) || X_mfa <- Calls, not is_xref_recursion(MFA, X_mfa)],
-                    {MFA, Analysed_calls};
+                    {ok, MFA, Analysed_calls};
                 Error ->
                     throw(Error)
             end
@@ -691,7 +737,6 @@ is_xref_recursion(_,_) ->
 
 %%
 ensure_xref_started() ->
-    io:format("ENSURE XREF STARTED~n"),
     catch xref:stop(?erlyberly_xref),
     {ok, _} = xref:start(?erlyberly_xref, [{verbose, false},{warnings, false}]),
     Excluded = [
@@ -720,7 +765,7 @@ ensure_xref_started() ->
     end),
     % io:format("TIME ~p",[_TimeUs]),
     [xref:add_directory(?erlyberly_xref, P) || P <- CodePaths],
-    {ok, erlyberly_xref_started}.
+    {erlyberly_xref_started}.
 
 dir_contains(_, []) ->
     false;
@@ -728,15 +773,6 @@ dir_contains(Dir, [Str|Tail]) ->
     case string:str(Dir, Str) of
         0 -> dir_contains(Dir, Tail);
         _ -> true
-    end.
-
-%% load a module if it is not already loaded
-try_load_module(Module_name) when is_atom(Module_name) ->
-    case code:is_loaded(Module_name) of
-        false ->
-            code:ensure_loaded(Module_name);
-        {file, _} ->
-            ok
     end.
 
 %%% ============================================================================
@@ -751,9 +787,9 @@ get_source_code(What) ->
             Mod when is_atom(Mod) -> mod_src(Mod)
         end
     catch
-        _:E ->
+        Error:Reason:_Stacktrace ->
             {error, list_to_binary(
-                lists:flatten(io_lib:format("E:~p stack:~p", [E,erlang:get_stacktrace()]))
+                lists:flatten(io_lib:format("E:~p stack:~p", [Error, Reason]))
             )}
     end.
 
@@ -765,9 +801,9 @@ get_abstract_code(What) ->
             Mod when is_atom(Mod) -> mod_abst(Mod)
         end
     catch
-        _:_E ->
+        _Error:Reason:_Stacktrace ->
             {error, list_to_binary(
-                lists:flatten(io_lib:format("~p", [erlang:get_stacktrace()]))
+                lists:flatten(io_lib:format("~p", [Reason]))
             )}
     end.
 
@@ -926,11 +962,11 @@ saleyn_fun_src(Fun, Options) when is_function(Fun), is_list(Options) ->
     saleyn_fun_src(Module, Name, F, Arity, Pos, Forms, Fun, Options).
 
 saleyn_fun_src(erl_eval, _Name, expr, _Arity, _Pos, _Forms, Fun, Options) ->
-    case erlang:fun_info(Fun, env) of
-        {env, [_, _, _, Abst | _]} ->
-            ok;
-        {env,[{[], _, _, Abst}]} ->
-            ok
+    Abst = case erlang:fun_info(Fun, env) of
+        {env, [_, _, _, A | _]} ->
+            A;
+        {env,[{[], _, _, A}]} ->
+            A
     end,
     Ast = erl_syntax:form_list(Abst),
     saleyn_fun_src2(format, Ast, Options);

@@ -1,19 +1,14 @@
 /**
- * erlyberly, erlang trace debugger
- * Copyright (C) 2016 Andy Till
+ * ErlyBerly，Erlang 跟踪调试器
+ * 版权所有 (C) 2016 Andy Till
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * 本程序是自由软件：您可以根据自由软件基金会发布的 GNU 通用公共许可证进行 redistribut 和/或修改，
+ * 使用许可证的第 3 版，或（根据您的选择）任何更高版本。
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU General Public License for more details.
+ * 本程序的发布是希望它能有用，但不提供任何保证；甚至不包括对适销性或特定用途适用性的默示保证。
+ * 有关更多详细信息，请参阅 GNU 通用公共许可证。
  *
- * You should have received a copy of the GNU General Public License
- * along with this program. If not, see <http://www.gnu.org/licenses/>.
+ * 您应该已经收到了 GNU 通用公共许可证的副本。如果没有，请参见 <http://www.gnu.org/licenses/>。
  */
 package erlyberly;
 
@@ -23,7 +18,6 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.ResourceBundle;
-import java.util.concurrent.ScheduledFuture;
 
 import com.ericsson.otp.erlang.OtpErlangAtom;
 import com.ericsson.otp.erlang.OtpErlangList;
@@ -76,8 +70,7 @@ public class DbgView implements Initializable {
     private final FilteredList<TreeItem<ModFunc>> filteredTreeModules = new FilteredList<TreeItem<ModFunc>>(sortedTreeModules);
 
     /**
-     * A list of all the filtered lists for functions, so a predicate can be set on them.  Binding
-     * the predicate property does not seem to work.
+     * 函数过滤列表的列表，因此可以在它们上设置谓词。绑定谓词属性似乎不起作用。
      */
     private final HashMap<ModFunc, FilteredList<TreeItem<ModFunc>>> functionLists = new HashMap<>();
 
@@ -130,7 +123,7 @@ public class DbgView implements Initializable {
             .stylesheets("/floatyfield/floaty-field.css", "/erlyberly/erlyberly.css")
             .makeTabsDetachable(tabPane);
         Tab traceViewTab;
-        traceViewTab = new Tab("Traces");
+        traceViewTab = new Tab("跟踪");
         traceViewTab.setContent(new DbgTraceView(dbgController));
         traceViewTab.setClosable(false);
         getTabPane().getTabs().add(traceViewTab);
@@ -145,7 +138,7 @@ public class DbgView implements Initializable {
         FloatyFieldView ffView;
 
         ffView = (FloatyFieldView) loader.controller;
-        ffView.promptTextProperty().set("Filter functions i.e. gen_s:call or #t for all traces");
+        ffView.promptTextProperty().set("过滤函数，例如 gen_s:call 或 #t 表示所有跟踪");
 
         loader.fxmlNode.setStyle("-fx-padding: 5 5 0 5;");
 
@@ -166,23 +159,13 @@ public class DbgView implements Initializable {
     }
 
     /**
-     * Flag for when the shortcut for applying traces to all visisble functions
-     * is pressed down, used for only executing it once per press, not once per
-     * event which can be many.
+     * 当按下对所有可见函数应用跟踪的快捷方式时的标志，用于每次按键只执行一次，而不是每次事件执行多次。
      */
     static boolean toggleAllTracesDown = false;
 
     private StringProperty filterTextProperty;
 
     private TabPane tabPane;
-
-    /**
-     * A scheduled future that gets created when the module filter text is
-     * changed, when it is changed again it is cancelled and a new one is
-     * created. If no change occurs within the delay time then the module in
-     * the filter will be loaded.
-     */
-    private ScheduledFuture<?> scheduledModuleLoadFuture;
 
     private TextField floatyFieldTextField(FxmlLoadable loader) {
         // FIXME floaty field should allow access to the text field
@@ -294,36 +277,6 @@ public class DbgView implements Initializable {
 
         // set predicates on the function tree items so that they filter correctly
         filterForFunctionTextMatch(filterTextProperty.get());
-
-        // this listener tries to load a module typed into the filter
-        // so that the user does not have to load it into the vm first
-        // downside is that it dynamically creates atoms at a max rate
-        // of one per second, not a huge amount
-        //
-        // TODO if there is a "production" mode then this feature should
-        //      disabled, alternatively we can check if the application is
-        //      embedded, if it is then all modules should be loaded anyway
-        filterTextProperty.addListener((o, oldString, newString) -> {
-            if(scheduledModuleLoadFuture != null) {
-                scheduledModuleLoadFuture.cancel(true);
-            }
-            String[] split = newString.trim().split(":");
-            if(newString == null || "".equals(newString) || split.length == 0)
-                return;
-            String moduleName = split[0];
-            if(moduleName == null || "".equals(moduleName)) {
-                return;
-            }
-            long delayMillis = 1000;
-            scheduledModuleLoadFuture = ErlyBerly.scheduledIO(delayMillis, () -> {
-                try {
-                    ErlyBerly.nodeAPI().tryLoadModule(moduleName);
-                }
-                catch (Exception e1) {
-                    e1.printStackTrace();
-                }
-            });
-        });
     }
 
     private void createModuleTreeItem(OtpErlangTuple tuple) {

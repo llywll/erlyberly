@@ -1,19 +1,14 @@
 /**
- * erlyberly, erlang trace debugger
- * Copyright (C) 2016 Andy Till
+ * ErlyBerly，Erlang 跟踪调试器
+ * 版权所有 (C) 2016 Andy Till
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * 本程序是自由软件：您可以根据自由软件基金会发布的 GNU 通用公共许可证进行 redistribut 和/或修改，
+ * 使用许可证的第 3 版，或（根据您的选择）任何更高版本。
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU General Public License for more details.
+ * 本程序的发布是希望它能有用，但不提供任何保证；甚至不包括对适销性或特定用途适用性的默示保证。
+ * 有关更多详细信息，请参阅 GNU 通用公共许可证。
  *
- * You should have received a copy of the GNU General Public License
- * along with this program. If not, see <http://www.gnu.org/licenses/>.
+ * 您应该已经收到了 GNU 通用公共许可证的副本。如果没有，请参见 <http://www.gnu.org/licenses/>。
  */
 package erlyberly;
 
@@ -33,6 +28,7 @@ import javafx.scene.control.ToggleGroup;
 
 public class PreferencesView implements Initializable {
 
+    public TextField localNodeNameField;
     @FXML
     private TextField nodeNameField;
     @FXML
@@ -65,6 +61,7 @@ public class PreferencesView implements Initializable {
         elixirTermsButton.setToggleGroup(group);
         lfeTermsButton.setToggleGroup(group);
 
+        PrefBind.bind("localNodeNameField", localNodeNameField.textProperty());
         PrefBind.bind("targetNodeName", nodeNameField.textProperty());
         PrefBind.bind("cookieName", cookieField.textProperty());
         PrefBind.bindBoolean("autoConnect", autoConnectField.selectedProperty());

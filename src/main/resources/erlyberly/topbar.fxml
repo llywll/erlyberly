@@ -8,41 +8,41 @@
 
 <ToolBar fx:id="topBox" xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1" fx:controller="erlyberly.TopBarView">
    <items>
-      <ToggleButton fx:id="hideProcessesButton" contentDisplay="TOP" mnemonicParsing="false" text="Hide Processes">
+      <ToggleButton fx:id="hideProcessesButton" contentDisplay="TOP" mnemonicParsing="false" text="隐藏进程">
          <font>
             <Font size="10.0" />
          </font></ToggleButton>
-      <ToggleButton fx:id="hideFunctionsButton" contentDisplay="TOP" mnemonicParsing="false" text="Hide Modules">
+      <ToggleButton fx:id="hideFunctionsButton" contentDisplay="TOP" mnemonicParsing="false" text="隐藏模块">
          <font>
             <Font size="10.0" />
          </font>
       </ToggleButton>
-      <Button fx:id="refreshModulesButton" mnemonicParsing="false" text="Refresh Modules">
+      <Button fx:id="refreshModulesButton" mnemonicParsing="false" text="刷新模块">
          <font>
             <Font size="10.0" />
          </font>
       </Button>
-      <Button fx:id="erlangMemoryButton" mnemonicParsing="false" text="Erlang Memory">
+      <Button fx:id="erlangMemoryButton" mnemonicParsing="false" text="Erlang 内存">
          <font>
             <Font size="10.0" />
          </font>
       </Button>
-      <Button fx:id="xrefAnalysisButton" mnemonicParsing="false" text="xref Analysis">
+      <Button fx:id="xrefAnalysisButton" mnemonicParsing="false" text="交叉引用分析">
          <font>
             <Font size="10.0" />
          </font>
       </Button>
-      <Button fx:id="disconnectButton" mnemonicParsing="false" text="Disconnect">
+      <Button fx:id="disconnectButton" mnemonicParsing="false" text="断开连接">
          <font>
             <Font size="10.0" />
          </font>
       </Button>
-      <Button fx:id="prefButton" mnemonicParsing="false" text="Preferences">
+      <Button fx:id="prefButton" mnemonicParsing="false" text="首选项">
          <font>
             <Font size="10.0" />
          </font>
       </Button>
-      <Button fx:id="suspendButton" mnemonicParsing="false" text="Unsuspend">
+      <Button fx:id="suspendButton" mnemonicParsing="false" text="取消挂起">
          <font>
             <Font size="10.0" />
          </font>

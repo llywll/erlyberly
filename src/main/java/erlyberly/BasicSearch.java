@@ -29,7 +29,7 @@ public class BasicSearch {
 
     enum IsMatch { MATCH, NO_MATCH, FILTERED };
 
-    private final List<SearchMatcher> matchers = new ArrayList<BasicSearch.SearchMatcher>();
+    private final List<SearchMatcher> matchers = new ArrayList<SearchMatcher>();
 
     public BasicSearch(String searchText) {
         List<String> searches = new ArrayList<String>(Arrays.asList(searchText.split("\\|")));

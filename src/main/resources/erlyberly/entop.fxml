@@ -11,12 +11,12 @@
 <children>
       <HBox fx:id="headerBox" alignment="CENTER_RIGHT" spacing="5.0">
          <children>
-            <Button fx:id="refreshButton" mnemonicParsing="false" onAction="#onRefresh" text="Refresh">
+            <Button fx:id="refreshButton" mnemonicParsing="false" onAction="#onRefresh" text="刷新">
                <HBox.margin>
                   <Insets />
                </HBox.margin>
             </Button>
-            <Button fx:id="pollButton" mnemonicParsing="false" onAction="#onTogglePolling" text="Start Polling">
+            <Button fx:id="pollButton" mnemonicParsing="false" onAction="#onTogglePolling" text="开始轮询">
                <HBox.margin>
                   <Insets />
                </HBox.margin>
@@ -27,21 +27,21 @@
          </VBox.margin>
       </HBox><TableView fx:id="processView" VBox.vgrow="SOMETIMES" xmlns:fx="http://javafx.com/fxml">
   <columns>
-            <TableColumn fx:id="pid" prefWidth="75.0" text="Pid" />
-    <TableColumn fx:id="proc" minWidth="150.0" prefWidth="150.0" text="Name" />
-    <TableColumn fx:id="reduc" prefWidth="110.0" text="Reductions" />
-            <TableColumn fx:id="mqueue" prefWidth="90.0" text="M. Queue" />
-            <TableColumn fx:id="heapsize" prefWidth="125.0" text="Heap Size B.">
+            <TableColumn fx:id="pid" prefWidth="75.0" text="进程ID" />
+    <TableColumn fx:id="proc" minWidth="150.0" prefWidth="150.0" text="名称" />
+    <TableColumn fx:id="reduc" prefWidth="110.0" text="归约数" />
+            <TableColumn fx:id="mqueue" prefWidth="90.0" text="消息队列" />
+            <TableColumn fx:id="heapsize" prefWidth="125.0" text="堆大小(字节)">
                <graphic>
-                  <Button fx:id="heapPieButton" mnemonicParsing="false" onAction="#onHeapPie" text="Pie" />
+                  <Button fx:id="heapPieButton" mnemonicParsing="false" onAction="#onHeapPie" text="饼图" />
                </graphic></TableColumn>
-            <TableColumn fx:id="stacksize" prefWidth="125.0" text="Stack Size B.">
+            <TableColumn fx:id="stacksize" prefWidth="125.0" text="栈大小(字节)">
                <graphic>
-                  <Button fx:id="stackPieButton" mnemonicParsing="false" onAction="#onStackPie" text="Pie" />
+                  <Button fx:id="stackPieButton" mnemonicParsing="false" onAction="#onStackPie" text="饼图" />
                </graphic></TableColumn>
-            <TableColumn fx:id="totalheapsize" prefWidth="150.0" text="Total Heap Size B.">
+            <TableColumn fx:id="totalheapsize" prefWidth="150.0" text="总堆大小(字节)">
                <graphic>
-                  <Button fx:id="totalHeapPieButton" mnemonicParsing="false" onAction="#onTotalHeapPie" text="Pie" />
+                  <Button fx:id="totalHeapPieButton" mnemonicParsing="false" onAction="#onTotalHeapPie" text="饼图" />
                </graphic></TableColumn>
   </columns>
 </TableView>

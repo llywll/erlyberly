@@ -18,24 +18,26 @@
     <RowConstraints minHeight="10.0" vgrow="SOMETIMES" />
   </rowConstraints>
    <children>
-      <Label text="Target Node" GridPane.columnIndex="1" />
-      <TextField fx:id="nodeNameField" />
-      <Label text="Cookie" GridPane.columnIndex="1" GridPane.rowIndex="1" />
-      <TextField fx:id="cookieField" GridPane.rowIndex="1" />
-      <CheckBox fx:id="autoConnectField" text="Auto Connect on Next Startup"
+       <Label text="本地节点" GridPane.columnIndex="0" />
+       <TextField fx:id="localNodeNameField" GridPane.columnIndex="1" />
+       <Label text="目标节点" GridPane.columnIndex="0" GridPane.rowIndex="0" />
+       <TextField fx:id="nodeNameField" GridPane.columnIndex="1" GridPane.rowIndex="0" />
+       <Label text="Cookie" GridPane.columnIndex="0" GridPane.rowIndex="1" />
+       <TextField fx:id="cookieField" GridPane.columnIndex="1" GridPane.rowIndex="1" />
+      <CheckBox fx:id="autoConnectField" text="下次启动时自动连接"
         GridPane.columnSpan="2" GridPane.rowIndex="2" />
-      <CheckBox fx:id="hideProcesses" text="Hide Processes on Startup"
+      <CheckBox fx:id="hideProcesses" text="启动时隐藏进程列表"
         GridPane.columnSpan="2" GridPane.rowIndex="3" />
-      <CheckBox fx:id="hideModules" text="Hide Modules on Startup"
+      <CheckBox fx:id="hideModules" text="启动时隐藏模块列表"
         GridPane.columnSpan="2" GridPane.rowIndex="4" />
-      <CheckBox fx:id="showSourceInSystemEditorBox" text="Show Source in the System Text Editor"
+      <CheckBox fx:id="showSourceInSystemEditorBox" text="在系统文本编辑器中显示源代码"
         GridPane.columnSpan="2" GridPane.rowIndex="5" />
       <Separator GridPane.columnSpan="2" GridPane.rowIndex="6" />
-     <RadioButton fx:id="erlangTermsButton" text="Display Erlang Terms"
+     <RadioButton fx:id="erlangTermsButton" text="显示 Erlang 术语"
         GridPane.columnSpan="2" GridPane.rowIndex="7" />
-     <RadioButton fx:id="elixirTermsButton" text="Display Elixir Terms"
+     <RadioButton fx:id="elixirTermsButton" text="显示 Elixir 术语"
         GridPane.columnSpan="2" GridPane.rowIndex="8" />
-      <RadioButton fx:id="lfeTermsButton" text="Display LFE Terms"
+      <RadioButton fx:id="lfeTermsButton" text="显示 LFE 术语"
         GridPane.columnSpan="2" GridPane.rowIndex="9" />
    </children>
    <padding>

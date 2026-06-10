@@ -37,7 +37,6 @@ import com.ericsson.otp.erlang.OtpErlangTuple;
 
 import erlyberly.node.NodeAPI;
 import erlyberly.node.OtpUtil;
-import javafx.application.Platform;
 import javafx.beans.binding.BooleanBinding;
 import javafx.beans.property.SimpleBooleanProperty;
 import javafx.beans.property.SimpleObjectProperty;
@@ -51,9 +50,9 @@ import javafx.scene.input.KeyCombination;
 
 public class ModFuncContextMenu extends ContextMenu {
 
-    private static final String VIEW_SOURCE_CODE = "View Source Code";
+    private static final String VIEW_SOURCE_CODE = "查看源代码";
 
-    private static final String VIEW_ABST_CODE = "View Abstract Code";
+    private static final String VIEW_ABST_CODE = "查看抽象代码";
 
     private final DbgController dbgController;
 
@@ -105,41 +104,41 @@ public class ModFuncContextMenu extends ContextMenu {
 
         MenuItem functionTraceMenuItem, exportsTraceMenuItem, traceAllMenuItem, seqTraceMenuItem, callGraphMenuItem, moduleSourceCodeItem, moduleAbstCodeItem;
 
-        functionTraceMenuItem = new MenuItem("Function Trace");
+        functionTraceMenuItem = new MenuItem("函数跟踪");
         functionTraceMenuItem.setOnAction(this::onFunctionTrace);
         functionTraceMenuItem.setAccelerator(KeyCombination.keyCombination("shortcut+t"));
         functionTraceMenuItem.disableProperty().bind(isSelectionFunction.not());
 
-        exportsTraceMenuItem = new MenuItem("Exported Function Trace");
+        exportsTraceMenuItem = new MenuItem("导出函数跟踪");
         exportsTraceMenuItem.setOnAction(this::onExportedFunctionTrace);
         exportsTraceMenuItem.setAccelerator(KeyCombination.keyCombination("shortcut+e"));
 
-        traceAllMenuItem = new MenuItem("Trace All");
+        traceAllMenuItem = new MenuItem("全部跟踪");
         traceAllMenuItem.setOnAction((e) -> { toggleTracesToAllFunctions(); });
         traceAllMenuItem.disableProperty().bind(rootProperty.isNull());
         traceAllMenuItem.setAccelerator(KeyCombination.keyCombination("shortcut+shift+t"));
 
-        moduleTraceMenuItem = new MenuItem("Recursive Trace");
+        moduleTraceMenuItem = new MenuItem("递归跟踪");
         moduleTraceMenuItem.setOnAction(this::onModuleTrace);
 
-        seqTraceMenuItem = new MenuItem("Seq Trace (experimental)");
+        seqTraceMenuItem = new MenuItem("顺序跟踪 (实验性)");
         seqTraceMenuItem.setOnAction(this::onSeqTrace);
         seqTraceMenuItem.disableProperty().bind(isSelectionFunction.not());
 
         BooleanBinding any = isSelectionFunction.or(isSelectionModule);
 
         moduleSourceCodeItem = new MenuItem(VIEW_SOURCE_CODE);
-        moduleSourceCodeItem.setOnAction(this::onViewCode);
+        moduleSourceCodeItem.setOnAction(this::onModuleCode);
         moduleSourceCodeItem.disableProperty().bind(any.not());
 
         moduleAbstCodeItem = new MenuItem(VIEW_ABST_CODE);
-        moduleAbstCodeItem.setOnAction(this::onViewCode);
+        moduleAbstCodeItem.setOnAction(this::onModuleCode);
         moduleAbstCodeItem.disableProperty().bind(any.not());
 
         NodeAPI nodeAPI = ErlyBerly.nodeAPI();
         SimpleBooleanProperty connectedProperty = nodeAPI.connectedProperty();
 
-        callGraphMenuItem = new MenuItem("View Call Graph");
+        callGraphMenuItem = new MenuItem("查看调用图");
         callGraphMenuItem.setOnAction(this::onViewCallGraph);
         callGraphMenuItem.disableProperty().bind(connectedProperty.not().or(nodeAPI.xrefStartedProperty().not()).or(isSelectionFunction.not()));
         getItems().addAll(
@@ -155,7 +154,7 @@ public class ModFuncContextMenu extends ContextMenu {
 
         dbgController.seqTrace(func);
 
-        ErlyBerly.showPane("Seq Trace", new SeqTraceView(dbgController.getSeqTraceLogs()));
+        ErlyBerly.showPane("顺序跟踪", new SeqTraceView(dbgController.getSeqTraceLogs()));
     }
 
     private void onViewCallGraph(ActionEvent ae) {
@@ -168,35 +167,24 @@ public class ModFuncContextMenu extends ContextMenu {
         List<String> defaultSkippedModules = Arrays.asList(
             "app_helper", "application", "binary", "code", "compile", "crypto", "dets", "dict", "erl_pp", "erl_syntax", "erlang", "ets", "exometer", "exometer_admin", "file", "gb_sets", "gen", "gen_event", "gen_fsm", "gen_server", "httpc", "httpd_util", "inet", "inet_parse", "inets", "io", "io_lib", "io_lib_pretty", "lager", "lager_config", "lists", "mnesia", "msgpack", "orddict", "proplists", "sets", "string", "timer"
         );
-        List<String> skippedModules = getConfiguredSkippedModuleNames(defaultSkippedModules);
+        List<String> skippedModules = (List<String>) PrefBind.getOrDefault("xrefSkippedModules", defaultSkippedModules);
         List<OtpErlangAtom> skippedModuleAtoms = skippedModules.stream().map(OtpUtil::atom).collect(Collectors.toList());
-        ErlyBerly.runIO(() -> {
-            try {
-                OtpErlangObject rpcResult = ErlyBerly.nodeAPI().callGraph(
-                    new OtpErlangList(skippedModuleAtoms.toArray(new OtpErlangAtom[]{})),
-                    OtpUtil.atom(func.getModuleName()),
-                    OtpUtil.atom(func.getFuncName()),
-                    new OtpErlangLong(func.getArity()));
-                if(!OtpUtil.isTupleTagged(NodeAPI.OK_ATOM, rpcResult)) {
-                    throw new RuntimeException(rpcResult.toString());
-                }
-                OtpErlangTuple rpcResultTuple = (OtpErlangTuple) rpcResult;
-                OtpErlangObject callGraph = rpcResultTuple.elementAt(1);
-                Platform.runLater(() -> {
-                    CallGraphView callGraphView = new CallGraphView(dbgController);
-                    callGraphView.callGraph((OtpErlangTuple) callGraph);
-                    ErlyBerly.showPane(func.toFullString() + " call graph", ErlyBerly.wrapInPane(callGraphView));
-                });
+        try {
+            OtpErlangObject callGraph = ErlyBerly.nodeAPI().callGraph(
+                new OtpErlangList(skippedModuleAtoms.toArray(new OtpErlangAtom[]{})),
+                OtpUtil.atom(func.getModuleName()),
+                OtpUtil.atom(func.getFuncName()),
+                new OtpErlangLong(func.getArity()));
+            if(!OtpUtil.isTupleTagged(NodeAPI.OK_ATOM, callGraph)) {
+                throw new RuntimeException(callGraph.toString());
             }
-            catch (OtpErlangException | IOException e) {
-                e.printStackTrace();
-            }
-        });
-    }
-
-    @SuppressWarnings("unchecked")
-    private List<String> getConfiguredSkippedModuleNames(List<String> defaultSkippedModules) {
-        return (List<String>) PrefBind.getOrDefault("xrefSkippedModules", defaultSkippedModules);
+            CallGraphView callGraphView = new CallGraphView(dbgController);
+            callGraphView.callGraph((OtpErlangTuple) callGraph);
+            ErlyBerly.showPane(func.toFullString() + " 调用图", ErlyBerly.wrapInPane(callGraphView));
+        }
+        catch (OtpErlangException | IOException e) {
+            e.printStackTrace();
+        }
     }
 
     private void onFunctionTrace(ActionEvent e) {
@@ -266,36 +254,33 @@ public class ModFuncContextMenu extends ContextMenu {
        }
     }
 
-   private void onViewCode(ActionEvent ae) {
-       MenuItem mi = (MenuItem) ae.getSource();
-       String menuItemClicked = mi.getText();
-       ModFunc mf = selectedItem.get();
-       if(mf == null)
-           return;
-       String moduleName = mf.getModuleName();
-       ErlyBerly.runIO(() -> {
-           try{
-                final String title;
-                String modSrc;
-                if(mf.isModule()) {
-                    modSrc = fetchModuleCode(menuItemClicked, moduleName);
-                    title = moduleName + " Source code";
-                }
-                else {
-                    String functionName = mf.getFuncName();
-                    Integer arity = mf.getArity();
-                    modSrc = fetchFunctionCode(menuItemClicked, moduleName, functionName, arity);
-                    title = moduleName;
-                }
-                Platform.runLater(() -> { showModuleSourceCode(title, modSrc); });
+   private void onModuleCode(ActionEvent ae){
+        try{
+            MenuItem mi = (MenuItem) ae.getSource();
+            String menuItemClicked = mi.getText();
+            ModFunc mf = selectedItem.get();
+
+            if(mf == null)
+                return;
+
+            String moduleName = mf.getModuleName();
+            String modSrc;
+            if(mf.isModule()) {
+                modSrc = fetchModCode(menuItemClicked, moduleName);
+                showModuleSourceCode(moduleName + " Source code ", modSrc);
             }
-            catch (Exception e) {
-                throw new RuntimeException("failed to load the source code.", e);
+            else {
+                String functionName = mf.getFuncName();
+                Integer arity = mf.getArity();
+                modSrc = fetchModCode(menuItemClicked, moduleName, functionName, arity);
+                showModuleSourceCode(moduleName, modSrc);
             }
-        });
+        } catch (Exception e) {
+            throw new RuntimeException("failed to load the source code.", e);
+        }
     }
 
-    private String fetchModuleCode(String menuItemClicked, String moduleName) throws IOException, OtpErlangException {
+    private String fetchModCode(String menuItemClicked, String moduleName) throws IOException, OtpErlangException {
         switch (menuItemClicked){
             case VIEW_SOURCE_CODE:
                 return dbgController.moduleFunctionSourceCode(moduleName);
@@ -306,7 +291,7 @@ public class ModFuncContextMenu extends ContextMenu {
         }
     }
 
-    private String fetchFunctionCode(String menuItemClicked, String moduleName, String function, Integer arity) throws IOException, OtpErlangException {
+    private String fetchModCode(String menuItemClicked, String moduleName, String function, Integer arity) throws IOException, OtpErlangException {
         switch (menuItemClicked){
             case VIEW_SOURCE_CODE:
                 return dbgController.moduleFunctionSourceCode(moduleName, function, arity);
