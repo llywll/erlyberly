@@ -36,6 +36,7 @@
 -export([stop_trace/4]).
 -export([stop_traces/0]).
 -export([xref_analysis/4]).
+-export([send_message/3]).
 
 %% exported for spawned processes
 -export([erlyberly_tcollector/3]).
@@ -50,6 +51,77 @@
 -export([handle_info/2]).
 -export([terminate/2]).
 -export([code_change/3]).
+
+%%% ============================================================================
+%%% send message to process
+%%% ============================================================================
+
+%% Send a message to a process using call, cast, or info (plain send).
+%% MsgType: call | cast | info
+%% MsgString: an Erlang term string, e.g. "{hello, world}" or "ping"
+send_message(PidString, MsgType, MsgString) when is_list(PidString),
+                                                   is_atom(MsgType),
+                                                   is_list(MsgString) ->
+    Pid = list_to_pid(PidString),
+    Term = parse_term_string(MsgString),
+    case MsgType of
+        call ->
+            try
+                Timeout = 5000,
+                Result = gen_server:call(Pid, Term, Timeout),
+                {ok, Result}
+            catch
+                exit:{timeout, _} ->
+                    {error, timeout};
+                exit:{noproc, _} ->
+                    {error, noproc};
+                Class:Reason:_Stacktrace ->
+                    {error, {Class, Reason}}
+            end;
+        cast ->
+            try
+                gen_server:cast(Pid, Term),
+                {ok, cast_sent}
+            catch
+                Class:Reason:_Stacktrace ->
+                    {error, {Class, Reason}}
+            end;
+        info ->
+            try
+                Pid ! Term,
+                {ok, info_sent}
+            catch
+                Class:Reason:_Stacktrace ->
+                    {error, {Class, Reason}}
+            end
+    end.
+
+%% Parse a string into an Erlang term.
+%% If parsing fails, wrap the string as a tuple {raw_string, MsgString}.
+parse_term_string(MsgString) ->
+    %% Append a dot to make it a valid Erlang expression
+    DotString = MsgString ++ ".",
+    case erl_scan:string(DotString) of
+        {ok, Tokens, _} ->
+            case erl_parse:parse_term(Tokens) of
+                {ok, Term} -> Term;
+                {error, _Reason} ->
+                    %% If term parsing fails, try expression evaluation
+                    case erl_parse:parse_exprs(Tokens) of
+                        {ok, Exprs} ->
+                            %% Evaluate the expression in a safe context
+                            case erl_eval:exprs(Exprs, erl_eval:new_bindings()) of
+                                {value, Val, _} -> Val;
+                                _ ->
+                                    {raw_string, MsgString}
+                            end;
+                        _ ->
+                            {raw_string, MsgString}
+                    end
+            end;
+        {error, _, _} ->
+            {raw_string, MsgString}
+    end.
 
 %%% ============================================================================
 %%% process info

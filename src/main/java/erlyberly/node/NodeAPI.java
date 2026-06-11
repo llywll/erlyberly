@@ -681,6 +681,20 @@ public class NodeAPI {
     }
 
     /**
+     * 给进程发送消息（call/cast/info）
+     * @param pidString 进程PID字符串，如 "<0.1.0>"
+     * @param msgType 消息类型："call"、"cast" 或 "info"
+     * @param msgString 消息内容的Erlang术语字符串
+     * @return 返回Erlang端的响应结果
+     */
+    public synchronized OtpErlangObject sendMessage(String pidString, String msgType, String msgString) throws IOException, OtpErlangException {
+        sendRPC(ERLYBERLY, "send_message", list(pidString, atom(msgType), msgString));
+        // call 类型需要更长超时，因为 gen_server:call 默认 5000ms
+        OtpErlangObject result = receiveRPC("call".equals(msgType) ? 10000 : 5000);
+        return result;
+    }
+
+    /**
      * 获取所有 ETS 表列表
      */
     public synchronized OtpErlangObject getEtsTables() throws IOException, OtpErlangException {

@@ -5,13 +5,14 @@
 ### 0.汉化
 ### 1.新增进程字典查看
 ### 2.新增ets查看
-### 3.目前问题：
-####     3.1调试需要开启javafx环境，原项目java版本很老，新版本java不在集成javafx,
+### 3.新增进程发送消息
+### 4.目前问题：
+####     5.1调试需要开启javafx环境，原项目java版本很老，新版本java不在集成javafx,
 调试方法：
 ```mvn
 mvn clean compile javafx:run
 ```
-####     3.2 jinterface版本原项目很老，我找了新的jinterface引用，放在了lib下, 一共三个 对应 OTP 25以下 OTP 26 以及 OTP 27 
+####     4.2 jinterface版本原项目很老，我找了新的jinterface引用，放在了lib下, 一共三个 对应 OTP 25以下 OTP 26 以及 OTP 27 
 ####     本地包安装：
 ```mvn
 mvn install:install-file  -Dfile=lib\OtpErlang-otp25-java21-1.13.2.jar -DgroupId=org.ericsson.otp -DartifactId=jinterface -Dversion=1.13.2 -Dpackaging=jar  -DgeneratePom=true

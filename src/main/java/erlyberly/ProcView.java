@@ -106,7 +106,12 @@ public class ProcView implements Initializable {
         dictMenuItem.setOnAction(this::onShowProcessDictionaryClicked);
         dictMenuItem.disableProperty().bind(processView.getSelectionModel().selectedItemProperty().isNull());
 
-        ContextMenu contextMenu = new ContextMenu(menuItem, dictMenuItem);
+        MenuItem sendMsgMenuItem;
+        sendMsgMenuItem = new MenuItem("发送消息 (Call/Cast/Info)");
+        sendMsgMenuItem.setOnAction(this::onSendMsgClicked);
+        sendMsgMenuItem.disableProperty().bind(processView.getSelectionModel().selectedItemProperty().isNull());
+
+        ContextMenu contextMenu = new ContextMenu(menuItem, dictMenuItem, sendMsgMenuItem);
 
         processView.setContextMenu(contextMenu);
 
@@ -230,6 +235,19 @@ public class ProcView implements Initializable {
             return;
 
         procController.processDictionary(proc, (eobj) -> {showProcessDictionaryInWindow(proc, eobj); });
+    }
+
+    /**
+     * 发送消息到进程
+     */
+    private void onSendMsgClicked(ActionEvent e) {
+        ProcInfo proc = processView.getSelectionModel().getSelectedItem();
+
+        if(proc == null)
+            return;
+
+        SendMsgView sendMsgView = new SendMsgView(proc);
+        sendMsgView.showPane();
     }
 
     private void showProcessStateInWindow(ProcInfo procInfo, OtpErlangObject obj) {
