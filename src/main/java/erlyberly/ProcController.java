@@ -238,6 +238,13 @@ public class ProcController {
         new ProcessDictionaryThread(proc.getPid(), callback).start();
     }
 
+    /**
+     * 获取进程信箱信息
+     */
+    public void processMessages(ProcInfo proc, RpcCallback<OtpErlangObject> callback) {
+        new ProcessMessagesThread(proc.getPid(), callback).start();
+    }
+
     class ProcessStateThread extends Thread {
 
         private final String pidString;
@@ -286,6 +293,35 @@ public class ProcController {
                 OtpErlangObject processDict = ErlyBerly.nodeAPI().getProcessDictionary(pidString);
 
                 Platform.runLater(() -> { callback.callback(processDict); });
+            }
+            catch (OtpErlangException | IOException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+    /**
+     * 获取进程信箱信息的线程
+     */
+    class ProcessMessagesThread extends Thread {
+
+        private final String pidString;
+        private final RpcCallback<OtpErlangObject> callback;
+
+        public ProcessMessagesThread(String aPidString, RpcCallback<OtpErlangObject> aCallback) {
+            pidString = aPidString;
+            callback = aCallback;
+
+            setDaemon(true);
+            setName("ErlyBerly 获取进程信箱");
+        }
+
+        @Override
+        public void run() {
+            try {
+                OtpErlangObject processMessages = ErlyBerly.nodeAPI().getProcessMessages(pidString);
+
+                Platform.runLater(() -> { callback.callback(processMessages); });
             }
             catch (OtpErlangException | IOException e) {
                 e.printStackTrace();

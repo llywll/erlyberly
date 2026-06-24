@@ -121,6 +121,14 @@ public class DbgController implements Initializable {
         }
         catch (Exception ex) {
             ex.printStackTrace();
+            // 在 JavaFX 线程上显示错误提示
+            Platform.runLater(() -> {
+                javafx.scene.control.Alert alert = new javafx.scene.control.Alert(javafx.scene.control.Alert.AlertType.ERROR);
+                alert.setTitle("追踪设置失败");
+                alert.setHeaderText("无法为 " + function.getModuleName() + ":" + function.getFuncName() + "/" + function.getArity() + " 设置追踪");
+                alert.setContentText(ex.getMessage());
+                alert.showAndWait();
+            });
         }
     }
 

@@ -111,7 +111,12 @@ public class ProcView implements Initializable {
         sendMsgMenuItem.setOnAction(this::onSendMsgClicked);
         sendMsgMenuItem.disableProperty().bind(processView.getSelectionModel().selectedItemProperty().isNull());
 
-        ContextMenu contextMenu = new ContextMenu(menuItem, dictMenuItem, sendMsgMenuItem);
+        MenuItem mailboxMenuItem;
+        mailboxMenuItem = new MenuItem("查看进程信箱");
+        mailboxMenuItem.setOnAction(this::onShowProcessMailboxClicked);
+        mailboxMenuItem.disableProperty().bind(processView.getSelectionModel().selectedItemProperty().isNull());
+
+        ContextMenu contextMenu = new ContextMenu(menuItem, dictMenuItem, sendMsgMenuItem, mailboxMenuItem);
 
         processView.setContextMenu(contextMenu);
 
@@ -250,6 +255,18 @@ public class ProcView implements Initializable {
         sendMsgView.showPane();
     }
 
+    /**
+     * 查看进程信箱
+     */
+    private void onShowProcessMailboxClicked(ActionEvent e) {
+        ProcInfo proc = processView.getSelectionModel().getSelectedItem();
+
+        if(proc == null)
+            return;
+
+        procController.processMessages(proc, (eobj) -> {showProcessMailboxInWindow(proc, eobj); });
+    }
+
     private void showProcessStateInWindow(ProcInfo procInfo, OtpErlangObject obj) {
         if(obj == null)
             obj = new OtpErlangString("Error, erlyberly cannot get process state. Probably not OTP compliant process");
@@ -310,14 +327,128 @@ public class ProcView implements Initializable {
         // 添加右键菜单和复制功能
         addDictTableContextMenu(tableView, procInfo.getShortName(), filteredData, tableData, obj);
 
+        // 创建刷新按钮
+        javafx.scene.control.Button refreshButton = new javafx.scene.control.Button("刷新");
+        refreshButton.setGraphic(FAIcon.create().icon(AwesomeIcon.ROTATE_LEFT));
+        refreshButton.setGraphicTextGap(5d);
+        final ProcInfo[] procInfoRef = {procInfo};
+        refreshButton.setOnAction(e -> {
+            refreshProcessDictionary(procInfoRef[0], tableView, tableData, filteredData);
+        });
+        
+        HBox buttonBox = new HBox(10, refreshButton);
+        buttonBox.setPadding(new Insets(5, 0, 5, 0));
+
         // 添加过滤搜索框
         Parent filterBox = addDictTableFilter(tableView, filteredData, tableData);
 
-        // 创建布局，包含搜索框和表格
-        VBox root = new VBox(5, filterBox, tableView);
+        // 创建布局，包含刷新按钮、搜索框和表格
+        VBox root = new VBox(5, buttonBox, filterBox, tableView);
         VBox.setVgrow(tableView, Priority.ALWAYS);
 
         ErlyBerly.showPane("进程字典 - " + procInfo.getShortName() + " (" + filteredData.size() + " 条记录)", ErlyBerly.wrapInPane(root));
+    }
+
+    /**
+     * 在窗口中显示进程信箱信息
+     */
+    @SuppressWarnings("unchecked")
+    private void showProcessMailboxInWindow(ProcInfo procInfo, OtpErlangObject obj) {
+        if(obj == null) {
+            showNotification("无法获取进程信箱信息", NotificationType.ERROR);
+            return;
+        }
+
+        // 使用表格展示进程信箱信息
+        javafx.scene.control.TableView<MailboxTableRow> tableView = new javafx.scene.control.TableView<>();
+        tableView.setMaxHeight(Integer.MAX_VALUE);
+        VBox.setVgrow(tableView, Priority.ALWAYS);
+
+        // 创建列
+        javafx.scene.control.TableColumn<MailboxTableRow, String> keyCol = new javafx.scene.control.TableColumn<>("属性");
+        keyCol.setCellValueFactory(new javafx.scene.control.cell.PropertyValueFactory<>("key"));
+        keyCol.setPrefWidth(200);
+
+        javafx.scene.control.TableColumn<MailboxTableRow, String> valueCol = new javafx.scene.control.TableColumn<>("值");
+        valueCol.setCellValueFactory(new javafx.scene.control.cell.PropertyValueFactory<>("value"));
+        valueCol.setPrefWidth(500);
+
+        tableView.getColumns().addAll(keyCol, valueCol);
+
+        // 解析数据并填充表格
+        javafx.collections.ObservableList<MailboxTableRow> tableData = javafx.collections.FXCollections.observableArrayList();
+        parseProcessMailbox(obj, tableData);
+
+        tableView.setItems(tableData);
+
+        // 创建刷新和轮询按钮
+        javafx.scene.control.Button refreshButton = new javafx.scene.control.Button("刷新");
+        refreshButton.setGraphic(FAIcon.create().icon(AwesomeIcon.ROTATE_LEFT));
+        refreshButton.setGraphicTextGap(5d);
+        
+        javafx.scene.control.ToggleButton pollButton = new javafx.scene.control.ToggleButton("开始轮询");
+        pollButton.setGraphic(FAIcon.create().icon(AwesomeIcon.REFRESH));
+        pollButton.setGraphicTextGap(5d);
+        
+        HBox buttonBox = new HBox(10, refreshButton, pollButton);
+        buttonBox.setPadding(new Insets(5, 0, 5, 0));
+        
+        // 刷新按钮事件
+        final javafx.animation.PauseTransition[] pollTimer = {null};
+        refreshButton.setOnAction(e -> {
+            procController.processMessages(procInfo, (eobj) -> {
+                Platform.runLater(() -> {
+                    if (eobj != null) {
+                        tableData.clear();
+                        parseProcessMailbox(eobj, tableData);
+                    }
+                });
+            });
+        });
+        
+        // 轮询按钮事件
+        pollButton.setOnAction(e -> {
+            if (pollButton.isSelected()) {
+                pollButton.setText("停止轮询");
+                // 启动定时器，每2秒刷新一次
+                javafx.animation.PauseTransition timer = new javafx.animation.PauseTransition(javafx.util.Duration.seconds(2));
+                timer.setOnFinished(event -> {
+                    if (pollButton.isSelected() && ErlyBerly.nodeAPI().isConnected()) {
+                        procController.processMessages(procInfo, (eobj) -> {
+                            Platform.runLater(() -> {
+                                if (eobj != null) {
+                                    tableData.clear();
+                                    parseProcessMailbox(eobj, tableData);
+                                }
+                                // 继续轮询
+                                timer.playFromStart();
+                            });
+                        });
+                    }
+                });
+                pollTimer[0] = timer;
+                timer.play();
+            } else {
+                pollButton.setText("开始轮询");
+                if (pollTimer[0] != null) {
+                    pollTimer[0].stop();
+                    pollTimer[0] = null;
+                }
+            }
+        });
+        
+        // 当窗口关闭时停止轮询
+        tableView.sceneProperty().addListener((obs, oldScene, newScene) -> {
+            if (newScene == null && pollTimer[0] != null) {
+                pollTimer[0].stop();
+            }
+        });
+
+        // 创建布局，包含按钮和表格
+        VBox root = new VBox(5, buttonBox, tableView);
+        VBox.setVgrow(tableView, Priority.ALWAYS);
+
+        ErlyBerly.showPane("进程信箱 - " + procInfo.getShortName(), ErlyBerly.wrapInPane(root));
     }
 
     @FXML
@@ -558,6 +689,31 @@ public class ProcView implements Initializable {
     }
 
     /**
+     * 刷新进程字典
+     */
+    @SuppressWarnings("unchecked")
+    private void refreshProcessDictionary(ProcInfo procInfo,
+                                         javafx.scene.control.TableView<DictTableRow> tableView,
+                                         javafx.collections.ObservableList<DictTableRow> tableData,
+                                         FilteredList<DictTableRow> filteredData) {
+        procController.processDictionary(procInfo, (eobj) -> {
+            Platform.runLater(() -> {
+                if (eobj != null) {
+                    // 清空现有数据
+                    tableData.clear();
+                    
+                    // 重新填充数据
+                    parseProcessDictionary(eobj, tableData);
+                    
+                    showNotification("进程字典已刷新", NotificationType.SUCCESS);
+                } else {
+                    showNotification("无法获取进程字典", NotificationType.ERROR);
+                }
+            });
+        });
+    }
+
+    /**
      * 为进程字典添加过滤搜索框
      */
     @SuppressWarnings("unchecked")
@@ -570,9 +726,19 @@ public class ProcView implements Initializable {
         FloatyFieldView ffView = (FloatyFieldView) loader.controller;
         ffView.promptTextProperty().set("过滤进程字典数据（按 PID、注册名或模块名）");
 
-        // 绑定过滤逻辑
+        // 绑定过滤逻辑（带防抖）
+        final javafx.animation.PauseTransition[] debounceTimer = {null};
         ffView.textProperty().addListener((o, oldValue, searchText) -> {
-            filterDictData(filteredData, tableData, searchText);
+            // 取消之前的定时器
+            if (debounceTimer[0] != null) {
+                debounceTimer[0].stop();
+            }
+            // 创建新的防抖定时器，延迟 300ms 执行过滤
+            debounceTimer[0] = new javafx.animation.PauseTransition(javafx.util.Duration.millis(300));
+            debounceTimer[0].setOnFinished(event -> {
+                filterDictData(filteredData, tableData, searchText);
+            });
+            debounceTimer[0].play();
         });
 
         Region fxmlNode = (Region) loader.fxmlNode;
@@ -696,25 +862,84 @@ public class ProcView implements Initializable {
         if (rawValue == null) {
             return;
         }
-        showTermDetailPopup(selectedRow.getKey(), rawValue);
+        // 传递表格引用和选中行索引，以便刷新时能重新获取数据
+        showTermDetailPopup(selectedRow.getKey(), rawValue, tableView, selectedRow.getIndex());
     }
 
     /**
      * 使用 TermTreeView 弹窗显示 Erlang 数据结构的详细视图
      */
     private void showTermDetailPopup(String title, OtpErlangObject term) {
+        showTermDetailPopup(title, term, null, -1);
+    }
+
+    /**
+     * 使用 TermTreeView 弹窗显示 Erlang 数据结构的详细视图（支持刷新）
+     * @param title 标题
+     * @param term 初始显示的术语
+     * @param parentTableView 父表格引用（用于刷新时重新获取数据）
+     * @param rowIndex 行索引（用于刷新时定位数据）
+     */
+    @SuppressWarnings("unchecked")
+    private void showTermDetailPopup(String title, OtpErlangObject term, 
+                                     javafx.scene.control.TableView<?> parentTableView,
+                                     int rowIndex) {
         TermTreeView termTreeView = new TermTreeView();
         termTreeView.populateFromTerm(term);
         termTreeView.setPrefSize(800, 600);
 
-        // 创建一个带复制按钮的工具栏
+        // 保存当前显示的术语对象，用于复制和刷新
+        final OtpErlangObject[] currentTerm = {term};
+
+        // 创建一个带复制和刷新按钮的工具栏
         javafx.scene.control.Button copyButton = new javafx.scene.control.Button("复制原始数据");
         copyButton.setOnAction(e -> {
-            copyToClipboard(term.toString());
-            showCopyNotification(1, "已复制原始数据到剪贴板");
+            // 复制当前显示的完整数据，不会被截断
+            String fullData = currentTerm[0].toString();
+            copyToClipboard(fullData);
+            showCopyNotification(1, "已复制原始数据到剪贴板（" + fullData.length() + " 字符）");
         });
 
-        javafx.scene.layout.HBox toolbar = new javafx.scene.layout.HBox(5, copyButton);
+        javafx.scene.control.Button refreshButton = new javafx.scene.control.Button("刷新");
+        refreshButton.setGraphic(FAIcon.create().icon(AwesomeIcon.ROTATE_LEFT));
+        refreshButton.setGraphicTextGap(5d);
+        final javafx.scene.control.TableView<?>[] tableViewRef = {parentTableView};
+        final int[] rowIndexRef = {rowIndex};
+        final String[] currentTitle = {title};
+        
+        refreshButton.setOnAction(e -> {
+            Platform.runLater(() -> {
+                try {
+                    // 如果有父表格引用，尝试从表格中重新获取最新数据
+                    if (tableViewRef[0] != null && rowIndexRef[0] >= 0) {
+                        Object item = tableViewRef[0].getItems().get(rowIndexRef[0]);
+                        OtpErlangObject newValue = null;
+                        
+                        if (item instanceof DictTableRow) {
+                            newValue = ((DictTableRow) item).getRawValue();
+                        }
+                        
+                        if (newValue != null) {
+                            // 更新当前术语引用
+                            currentTerm[0] = newValue;
+                            // 先清空树视图，再重新填充新数据
+                            termTreeView.getRoot().getChildren().clear();
+                            termTreeView.populateFromTerm(newValue);
+                            showNotification("已从节点重新加载数据", NotificationType.SUCCESS);
+                            return;
+                        }
+                    }
+                    
+                    // 如果没有父表格引用，只显示提示
+                    showNotification("无法重新加载数据（原始数据源已关闭）", NotificationType.INFO);
+                } catch (Exception ex) {
+                    showNotification("刷新失败: " + ex.getMessage(), NotificationType.ERROR);
+                    ex.printStackTrace();
+                }
+            });
+        });
+
+        javafx.scene.layout.HBox toolbar = new javafx.scene.layout.HBox(5, copyButton, refreshButton);
         toolbar.setPadding(new javafx.geometry.Insets(5));
 
         VBox root = new VBox(5, toolbar, termTreeView);
@@ -895,5 +1120,40 @@ public class ProcView implements Initializable {
         public int getIndex() { return index; }
         public OtpErlangObject getRawKey() { return rawKey; }
         public OtpErlangObject getRawValue() { return rawValue; }
+    }
+
+    /**
+     * 解析进程信箱信息
+     */
+    private void parseProcessMailbox(OtpErlangObject obj, javafx.collections.ObservableList<MailboxTableRow> tableData) {
+        if (obj instanceof com.ericsson.otp.erlang.OtpErlangList) {
+            com.ericsson.otp.erlang.OtpErlangList list = (com.ericsson.otp.erlang.OtpErlangList) obj;
+            for (OtpErlangObject item : list.elements()) {
+                if (item instanceof com.ericsson.otp.erlang.OtpErlangTuple) {
+                    com.ericsson.otp.erlang.OtpErlangTuple tuple = (com.ericsson.otp.erlang.OtpErlangTuple) item;
+                    if (tuple.arity() == 2) {
+                        String key = formatErlangTerm(tuple.elementAt(0));
+                        String value = formatErlangTerm(tuple.elementAt(1));
+                        tableData.add(new MailboxTableRow(key, value));
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * 进程信箱行数据类
+     */
+    public static class MailboxTableRow {
+        private final String key;
+        private final String value;
+
+        public MailboxTableRow(String key, String value) {
+            this.key = key;
+            this.value = value;
+        }
+
+        public String getKey() { return key; }
+        public String getValue() { return value; }
     }
 }

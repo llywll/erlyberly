@@ -25,11 +25,13 @@
 -export([get_abstract_code/1]).
 -export([get_process_state/1]).
 -export([get_process_dictionary/1]).
+-export([get_process_messages/1]).
 -export([get_ets_tables/0]).
 -export([get_ets_table_info/1]).
 -export([get_source_code/1]).
 -export([load_modules_on_path/1]).
 -export([module_functions/0]).
+-export([module_functions/1]).
 -export([process_info/0]).
 -export([seq_trace/5]).
 -export([start_trace/5]).
@@ -211,6 +213,45 @@ get_process_dictionary(Pid_string) when is_list(Pid_string) ->
             {error, lists:flatten(io_lib:format("Error: ~p, Reason: ~p", [Error, Reason]))}
     end.
 
+%% 获取进程信箱中的消息（最多100条）
+%% 注意：Erlang 没有直接 API 可以非侵入式地读取其他进程的信箱内容
+%% 这里我们返回消息队列长度和进程的基本信息
+get_process_messages(Pid_string) when is_list(Pid_string) ->
+    try
+        Pid = list_to_pid(Pid_string),
+        %% 获取消息队列长度
+        MsgQueueLen = case erlang:process_info(Pid, message_queue_len) of
+            {message_queue_len, Len} -> Len;
+            _ -> 0
+        end,
+        %% 获取进程状态
+        Status = case erlang:process_info(Pid, status) of
+            {status, St} -> St;
+            _ -> unknown
+        end,
+        %% 获取当前函数
+        CurrentFunction = case erlang:process_info(Pid, current_function) of
+            {current_function, Func} -> Func;
+            _ -> undefined
+        end,
+        if MsgQueueLen == 0 ->
+            {ok, [{message_queue_length, 0}, 
+                  {status, Status},
+                  {current_function, CurrentFunction},
+                  {messages, []}]};
+           true ->
+            %% 对于有消息的进程，返回队列长度和状态信息
+            {ok, [{message_queue_length, MsgQueueLen}, 
+                  {status, Status},
+                  {current_function, CurrentFunction},
+                  {note, "Mailbox has messages but content cannot be read without affecting the process"},
+                  {messages, truncated}]}
+        end
+    catch
+        Error:Reason:_Stacktrace ->
+            {error, lists:flatten(io_lib:format("Error: ~p, Reason: ~p", [Error, Reason]))}
+    end.
+
 %% 获取所有 ETS 表列表
 get_ets_tables() ->
     try
@@ -318,10 +359,49 @@ record_fields([]) ->
 %%% module function tree
 %%% ============================================================================
 
+%% 返回所有可用模块的函数信息。
+%% 默认会先扫描代码路径加载所有未加载的模块，确保模块列表完整。
 module_functions() ->
+    module_functions(all).
+
+%% ModuleFilter 可以是:
+%%   all        - 加载所有代码路径中发现的模块（默认）
+%%   loaded     - 只返回已加载的模块（与原始行为一致，更快但不全）
+%%   {regex, R} - 只加载路径匹配正则表达式 R 的模块
+module_functions(all) ->
+    %% 扫描所有代码路径，确保模块加载
+    ensure_all_modules_loaded(),
+    module_functions_from_loaded();
+module_functions(loaded) ->
+    module_functions_from_loaded();
+module_functions({regex, Regex}) ->
+    %% 只加载匹配正则的路径中的模块
+    Paths = [P || P <- code:get_path(), re:run(P, Regex) /= nomatch],
+    [code:ensure_loaded(file_name_to_module(F)) || P <- Paths,
+                                                   F <- filelib:wildcard(P ++ "/*.beam")],
+    module_functions_from_loaded().
+
+%% 从已加载的模块中获取函数信息
+module_functions_from_loaded() ->
     lists:sort(
-        [module_functions2(Mod) || {Mod, _FPath} <- code:all_loaded()]
+        [module_functions2(Mod) || {Mod, _FPath} <- code:all_loaded(),
+                                   %% 过滤掉非正常模块（如 erl_eval 等可能没有 module_info）
+                                   is_atom(Mod)]
     ).
+
+%% 扫描代码路径中所有 .beam 文件，尝试加载所有尚未加载的模块
+ensure_all_modules_loaded() ->
+    CodePaths = code:get_path(),
+    AllBeamFiles = lists:flatten(
+        [filelib:wildcard(P ++ "/" ++ "*.beam") || P <- CodePaths]
+    ),
+    ModulesToLoad = [file_name_to_module(F) || F <- AllBeamFiles],
+    %% 只加载尚未加载的模块，避免重复加载
+    LoadedModules = [Mod || {Mod, _} <- code:all_loaded()],
+    NotYetLoaded = [M || M <- ModulesToLoad, not lists:member(M, LoadedModules)],
+    %% 尝试加载每个未加载的模块，忽略加载失败的
+    [catch code:ensure_loaded(M) || M <- NotYetLoaded],
+    ok.
 
 module_functions2(Mod) when is_atom(Mod) ->
     Exports = Mod:module_info(exports),

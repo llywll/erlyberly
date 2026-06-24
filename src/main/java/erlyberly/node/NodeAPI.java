@@ -96,6 +96,10 @@ public class NodeAPI {
 
     private static final OtpErlangAtom MODULE_ATOM = new OtpErlangAtom("module");
 
+    private static final OtpErlangAtom ERROR_ATOM = new OtpErlangAtom("error");
+
+    private static final OtpErlangAtom ERROR_ALREADY_STARTED_ATOM = new OtpErlangAtom("already_started");
+
     private static final String ERLYBERLY_BEAM_PATH = "/erlyberly/beam/erlyberly.beam";
 
     private static final int BEAM_SIZE_LIMIT = 1024 * 50;
@@ -281,12 +285,22 @@ public class NodeAPI {
                 ERLYBERLY, "ensure_dbg_started",
                 list(tuple(atom(self.node()), mbox.self()), PrefBind.getMaxTraceQueueLengthConfig())
         );
-        // the return should be {ok, TracerPid}
+        // the return should be {ok, TracerPid} or {error, already_started}
         // we don't need to store the pid because it is registered
         OtpErlangObject returnedObject = receiveRPC();
-        if (!OtpUtil.isTupleTagged(OK_ATOM, returnedObject)) {
-            throw new RuntimeException(returnedObject.toString());
+        if (OtpUtil.isTupleTagged(OK_ATOM, returnedObject)) {
+            // dbg 启动成功，正常返回
+            return;
+        } else if (isTupleTagged(ERROR_ATOM, returnedObject)) {
+            // dbg 已经启动，这也是可以接受的
+            OtpErlangTuple errorTuple = (OtpErlangTuple) returnedObject;
+            if (errorTuple.arity() >= 2 && ERROR_ALREADY_STARTED_ATOM.equals(errorTuple.elementAt(1))) {
+                // already_started 是预期情况，忽略
+                return;
+            }
         }
+        // 其他错误情况才抛出异常
+        throw new RuntimeException("Failed to ensure dbg started: " + returnedObject);
     }
 
     private void loadModulesOnPath(String regex) throws IOException, OtpErlangException {
@@ -374,10 +388,11 @@ public class NodeAPI {
 
         OtpErlangBinary otpErlangBinary = new OtpErlangBinary(loadBeamFile());
 
+        // 第二个参数是文件名，仅用于错误报告，传递空字符串避免文件验证问题
         sendRPC("code", "load_binary",
                 list(
                         atom(ERLYBERLY),
-                        new OtpErlangString(ERLYBERLY_BEAM_PATH),
+                        new OtpErlangString(""),
                         otpErlangBinary));
 
         OtpErlangObject result = receiveRPC();
@@ -516,10 +531,37 @@ public class NodeAPI {
         }
     }
 
+    /**
+     * 获取所有可用模块的函数列表。
+     * 默认只返回已加载的模块（速度更快）。
+     * 如果需要加载所有模块，请使用 requestFunctionsAll()。
+     */
     public synchronized OtpErlangList requestFunctions() throws Exception {
         assert !Platform.isFxApplicationThread() : CANNOT_RUN_THIS_METHOD_FROM_THE_FX_THREAD;
 
-        sendRPC(ERLYBERLY, "module_functions", new OtpErlangList());
+        // 默认只返回已加载的模块，避免长时间等待
+        sendRPC(ERLYBERLY, "module_functions", list(atom("loaded")));
+        return (OtpErlangList) receiveRPC();
+    }
+
+    /**
+     * 获取所有可用模块的函数列表（包括未加载的模块，会先扫描代码路径并加载）。
+     * 由于需要扫描和加载所有模块，可能耗时较长（最多30秒）。
+     */
+    public synchronized OtpErlangList requestFunctionsAll() throws Exception {
+        assert !Platform.isFxApplicationThread() : CANNOT_RUN_THIS_METHOD_FROM_THE_FX_THREAD;
+
+        sendRPC(ERLYBERLY, "module_functions", list(atom("all")));
+        return (OtpErlangList) receiveRPC(30000);
+    }
+
+    /**
+     * 仅获取已加载模块的函数列表（不扫描代码路径，速度更快但不全）。
+     */
+    public synchronized OtpErlangList requestFunctionsLoadedOnly() throws Exception {
+        assert !Platform.isFxApplicationThread() : CANNOT_RUN_THIS_METHOD_FROM_THE_FX_THREAD;
+
+        sendRPC(ERLYBERLY, "module_functions", list(atom("loaded")));
         return (OtpErlangList) receiveRPC();
     }
 
@@ -527,16 +569,17 @@ public class NodeAPI {
         assert mf.getFuncName() != null : "function name cannot be null";
         // if tracing is suspended, we can't apply a new trace because that will
         // leave us in a state where some traces are active and others are not
-        if (isSuspended())
-            return;
+        if (isSuspended()) {
+            throw new Exception("Tracing is suspended. Please resume tracing first.");
+        }
         sendRPC(ERLYBERLY, "start_trace", toStartTraceFnArgs(mf, maxQueueLen));
 
         OtpErlangObject result = receiveRPC();
         if (!isTupleTagged(OK_ATOM, result)) {
-            System.out.println(result);
-
-            // TODO notify caller of failure!
-            return;
+            // 追踪设置失败，抛出异常通知用户
+            String errorMsg = "Failed to start trace on " + mf.getModuleName() + ":" + mf.getFuncName() + "/" + mf.getArity() + ". Result: " + result;
+            System.err.println(errorMsg);
+            throw new Exception(errorMsg);
         }
     }
 
@@ -671,6 +714,20 @@ public class NodeAPI {
      */
     public synchronized OtpErlangObject getProcessDictionary(String pidString) throws IOException, OtpErlangException {
         sendRPC(ERLYBERLY, "get_process_dictionary", list(pidString));
+
+        OtpErlangObject result = receiveRPC();
+
+        if (isTupleTagged(OK_ATOM, result)) {
+            return ((OtpErlangTuple) result).elementAt(1);
+        }
+        return null;
+    }
+
+    /**
+     * 获取进程信箱信息（消息队列长度、状态等）
+     */
+    public synchronized OtpErlangObject getProcessMessages(String pidString) throws IOException, OtpErlangException {
+        sendRPC(ERLYBERLY, "get_process_messages", list(pidString));
 
         OtpErlangObject result = receiveRPC();
 

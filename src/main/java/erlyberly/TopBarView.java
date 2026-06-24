@@ -63,6 +63,7 @@ import javafx.scene.control.Tooltip;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyCodeCombination;
 import javafx.scene.input.KeyCombination;
+import javafx.scene.layout.HBox;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.layout.Priority;
@@ -477,6 +478,30 @@ public class TopBarView implements Initializable {
 
         tableView.setItems(tableData);
 
+        // 创建过滤列表和排序列表
+        FilteredList<EtsTableInfo> filteredData = new FilteredList<>(tableData);
+        SortedList<EtsTableInfo> sortedData = new SortedList<>(filteredData);
+        sortedData.comparatorProperty().bind(tableView.comparatorProperty());
+        tableView.setItems(sortedData);
+
+        // 添加过滤搜索框
+        Parent filterBox = addEtsTableListFilter(tableView, filteredData, tableData);
+
+        // 创建刷新按钮
+        javafx.scene.control.Button refreshButton = new javafx.scene.control.Button("刷新");
+        refreshButton.setGraphic(FAIcon.create().icon(AwesomeIcon.ROTATE_LEFT));
+        refreshButton.setGraphicTextGap(5d);
+        refreshButton.setOnAction(e -> {
+            refreshEtsTables(tableView, tableData, filteredData);
+        });
+        
+        HBox buttonBox = new HBox(10, refreshButton);
+        buttonBox.setPadding(new Insets(5, 0, 5, 0));
+
+        // 创建布局，包含刷新按钮、搜索框和表格
+        VBox root = new VBox(5, buttonBox, filterBox, tableView);
+        VBox.setVgrow(tableView, Priority.ALWAYS);
+
         // 双击查看表内容
         tableView.setOnMouseClicked(event -> {
             if (event.getClickCount() == 2) {
@@ -487,7 +512,109 @@ public class TopBarView implements Initializable {
             }
         });
 
-        ErlyBerly.showPane("ETS 表", ErlyBerly.wrapInPane(tableView));
+        ErlyBerly.showPane("ETS 表 (" + filteredData.size() + " 个表)", ErlyBerly.wrapInPane(root));
+    }
+
+    /**
+     * 为 ETS 表列表添加过滤搜索框
+     */
+    @SuppressWarnings("unchecked")
+    private Parent addEtsTableListFilter(javafx.scene.control.TableView<EtsTableInfo> tableView,
+                                         FilteredList<EtsTableInfo> filteredData,
+                                         ObservableList<EtsTableInfo> tableData) {
+        FxmlLoadable loader = new FxmlLoadable("/floatyfield/floaty-field.fxml");
+        loader.load();
+
+        FloatyFieldView ffView = (FloatyFieldView) loader.controller;
+        ffView.promptTextProperty().set("过滤 ETS 表（搜索表名、类型或所有者）");
+
+        // 绑定过滤逻辑（带防抖）
+        final javafx.animation.PauseTransition[] debounceTimer = {null};
+        ffView.textProperty().addListener((o, oldValue, searchText) -> {
+            // 取消之前的定时器
+            if (debounceTimer[0] != null) {
+                debounceTimer[0].stop();
+            }
+            // 创建新的防抖定时器，延迟 300ms 执行过滤
+            debounceTimer[0] = new javafx.animation.PauseTransition(javafx.util.Duration.millis(300));
+            debounceTimer[0].setOnFinished(event -> {
+                filterEtsTableList(filteredData, tableData, searchText);
+            });
+            debounceTimer[0].play();
+        });
+
+        Region fxmlNode = (Region) loader.fxmlNode;
+        fxmlNode.setPadding(new Insets(5, 5, 0, 5));
+
+        // 注册到 FilterFocusManager
+        Platform.runLater(() -> {
+            FilterFocusManager.addFilter((javafx.scene.control.Control) loader.fxmlNode.getChildrenUnmodifiable().get(1), 3);
+        });
+
+        return fxmlNode;
+    }
+
+    /**
+     * 过滤 ETS 表列表
+     */
+    private void filterEtsTableList(FilteredList<EtsTableInfo> filteredData,
+                                    ObservableList<EtsTableInfo> tableData,
+                                    String searchText) {
+        if (searchText == null || searchText.trim().isEmpty()) {
+            filteredData.setPredicate(item -> true);
+        } else {
+            BasicSearch basicSearch = new BasicSearch(searchText);
+            filteredData.setPredicate(item -> {
+                // 搜索表名、类型和所有者
+                String name = item.getName();
+                String type = item.getType();
+                String owner = item.getOwner();
+                return basicSearch.matches(name, type, owner);
+            });
+        }
+    }
+
+    /**
+     * 刷新 ETS 表列表
+     */
+    @SuppressWarnings("unchecked")
+    private void refreshEtsTables(javafx.scene.control.TableView<EtsTableInfo> tableView,
+                                  ObservableList<EtsTableInfo> tableData,
+                                  FilteredList<EtsTableInfo> filteredData) {
+        new Thread(() -> {
+            try {
+                OtpErlangObject tablesObj = ErlyBerly.nodeAPI().getEtsTables();
+                
+                Platform.runLater(() -> {
+                    if (tablesObj != null) {
+                        // 清空现有数据
+                        tableData.clear();
+                        
+                        // 重新填充数据
+                        if (tablesObj instanceof com.ericsson.otp.erlang.OtpErlangList) {
+                            com.ericsson.otp.erlang.OtpErlangList list = (com.ericsson.otp.erlang.OtpErlangList) tablesObj;
+                            for (OtpErlangObject item : list.elements()) {
+                                if (item instanceof com.ericsson.otp.erlang.OtpErlangList) {
+                                    EtsTableInfo info = parseEtsTableInfo((com.ericsson.otp.erlang.OtpErlangList) item);
+                                    if (info != null) {
+                                        tableData.add(info);
+                                    }
+                                }
+                            }
+                        }
+                        
+                        showNotification("ETS 表列表已刷新", NotificationType.SUCCESS);
+                    } else {
+                        showNotification("无法获取 ETS 表信息", NotificationType.ERROR);
+                    }
+                });
+            } catch (Exception e) {
+                e.printStackTrace();
+                Platform.runLater(() -> {
+                    showNotification("刷新失败: " + e.getMessage(), NotificationType.ERROR);
+                });
+            }
+        }).start();
     }
 
     /**
@@ -631,11 +758,23 @@ public class TopBarView implements Initializable {
         // 添加右键菜单和复制功能（传递原始数据对象）
         addEtsTableContextMenu(tableView, tableName, filteredData, tableData, contentObj);
 
+        // 创建刷新按钮
+        javafx.scene.control.Button refreshButton = new javafx.scene.control.Button("刷新");
+        refreshButton.setGraphic(FAIcon.create().icon(AwesomeIcon.ROTATE_LEFT));
+        refreshButton.setGraphicTextGap(5d);
+        final String[] tableNameRef = {tableName};
+        refreshButton.setOnAction(e -> {
+            refreshEtsTableContent(tableNameRef[0], tableView, tableData, filteredData);
+        });
+        
+        HBox buttonBox = new HBox(10, refreshButton);
+        buttonBox.setPadding(new Insets(5, 0, 5, 0));
+
         // 添加过滤搜索框
         Parent filterBox = addEtsTableFilter(tableView, filteredData, tableData);
 
-        // 创建布局，包含搜索框和表格
-        VBox root = new VBox(5, filterBox, tableView);
+        // 创建布局，包含刷新按钮、搜索框和表格
+        VBox root = new VBox(5, buttonBox, filterBox, tableView);
         VBox.setVgrow(tableView, Priority.ALWAYS);
 
         ErlyBerly.showPane("ETS 表: " + tableName + " (" + filteredData.size() + " 条记录)", ErlyBerly.wrapInPane(root));
@@ -736,25 +875,86 @@ public class TopBarView implements Initializable {
         if (rawValue == null) {
             return;
         }
-        showTermDetailPopup(selectedRow.getKey(), rawValue);
+        // 传递表格引用和选中行索引，以便刷新时能重新获取数据
+        showTermDetailPopup(selectedRow.getKey(), rawValue, tableView, selectedRow.getIndex());
     }
 
     /**
      * 使用 TermTreeView 弹窗显示 Erlang 数据结构的详细视图
      */
     private void showTermDetailPopup(String title, OtpErlangObject term) {
+        showTermDetailPopup(title, term, null, -1);
+    }
+
+    /**
+     * 使用 TermTreeView 弹窗显示 Erlang 数据结构的详细视图（支持刷新）
+     * @param title 标题
+     * @param term 初始显示的术语
+     * @param parentTableView 父表格引用（用于刷新时重新获取数据）
+     * @param rowIndex 行索引（用于刷新时定位数据）
+     */
+    @SuppressWarnings("unchecked")
+    private void showTermDetailPopup(String title, OtpErlangObject term, 
+                                     javafx.scene.control.TableView<?> parentTableView,
+                                     int rowIndex) {
         TermTreeView termTreeView = new TermTreeView();
         termTreeView.populateFromTerm(term);
         termTreeView.setPrefSize(800, 600);
 
-        // 创建一个带复制按钮的工具栏
+        // 保存当前显示的术语对象，用于复制和刷新
+        final OtpErlangObject[] currentTerm = {term};
+
+        // 创建一个带复制和刷新按钮的工具栏
         javafx.scene.control.Button copyButton = new javafx.scene.control.Button("复制原始数据");
         copyButton.setOnAction(e -> {
-            copyToClipboard(term.toString());
-            showCopyNotification(1, "已复制原始数据到剪贴板");
+            // 复制当前显示的完整数据，不会被截断
+            String fullData = currentTerm[0].toString();
+            copyToClipboard(fullData);
+            showCopyNotification(1, "已复制原始数据到剪贴板（" + fullData.length() + " 字符）");
         });
 
-        javafx.scene.layout.HBox toolbar = new javafx.scene.layout.HBox(5, copyButton);
+        javafx.scene.control.Button refreshButton = new javafx.scene.control.Button("刷新");
+        refreshButton.setGraphic(FAIcon.create().icon(AwesomeIcon.ROTATE_LEFT));
+        refreshButton.setGraphicTextGap(5d);
+        final javafx.scene.control.TableView<?>[] tableViewRef = {parentTableView};
+        final int[] rowIndexRef = {rowIndex};
+        final String[] currentTitle = {title};
+        
+        refreshButton.setOnAction(e -> {
+            Platform.runLater(() -> {
+                try {
+                    // 如果有父表格引用，尝试从表格中重新获取最新数据
+                    if (tableViewRef[0] != null && rowIndexRef[0] >= 0) {
+                        Object item = tableViewRef[0].getItems().get(rowIndexRef[0]);
+                        OtpErlangObject newValue = null;
+                        
+                        if (item instanceof EtsTableRow) {
+                            newValue = ((EtsTableRow) item).getRawValue();
+                        } else if (item instanceof ProcView.DictTableRow) {
+                            newValue = ((ProcView.DictTableRow) item).getRawValue();
+                        }
+                        
+                        if (newValue != null) {
+                            // 更新当前术语引用
+                            currentTerm[0] = newValue;
+                            // 先清空树视图，再重新填充新数据
+                            termTreeView.getRoot().getChildren().clear();
+                            termTreeView.populateFromTerm(newValue);
+                            showNotification("已从节点重新加载数据", NotificationType.SUCCESS);
+                            return;
+                        }
+                    }
+                    
+                    // 如果没有父表格引用，只显示提示
+                    showNotification("无法重新加载数据（原始数据源已关闭）", NotificationType.INFO);
+                } catch (Exception ex) {
+                    showNotification("刷新失败: " + ex.getMessage(), NotificationType.ERROR);
+                    ex.printStackTrace();
+                }
+            });
+        });
+
+        javafx.scene.layout.HBox toolbar = new javafx.scene.layout.HBox(5, copyButton, refreshButton);
         toolbar.setPadding(new javafx.geometry.Insets(5));
 
         VBox root = new VBox(5, toolbar, termTreeView);
@@ -1060,6 +1260,40 @@ public class TopBarView implements Initializable {
     }
 
     /**
+     * 刷新 ETS 表内容
+     */
+    @SuppressWarnings("unchecked")
+    private void refreshEtsTableContent(String tableName,
+                                       javafx.scene.control.TableView<EtsTableRow> tableView,
+                                       ObservableList<EtsTableRow> tableData,
+                                       FilteredList<EtsTableRow> filteredData) {
+        new Thread(() -> {
+            try {
+                OtpErlangObject contentObj = ErlyBerly.nodeAPI().getEtsTableInfo(tableName);
+                
+                Platform.runLater(() -> {
+                    if (contentObj != null) {
+                        // 清空现有数据
+                        tableData.clear();
+                        
+                        // 重新填充数据
+                        parseEtsTableContent(contentObj, tableData);
+                        
+                        showNotification("ETS 表内容已刷新", NotificationType.SUCCESS);
+                    } else {
+                        showNotification("无法获取表内容: " + tableName, NotificationType.ERROR);
+                    }
+                });
+            } catch (Exception e) {
+                e.printStackTrace();
+                Platform.runLater(() -> {
+                    showNotification("刷新失败: " + e.getMessage(), NotificationType.ERROR);
+                });
+            }
+        }).start();
+    }
+
+    /**
      * 为 ETS 表添加过滤搜索框
      */
     @SuppressWarnings("unchecked")
@@ -1070,11 +1304,21 @@ public class TopBarView implements Initializable {
         loader.load();
 
         FloatyFieldView ffView = (FloatyFieldView) loader.controller;
-        ffView.promptTextProperty().set("过滤 ETS 表数据（按 PID、注册名或模块名）");
+        ffView.promptTextProperty().set("过滤 ETS 表数据（搜索键和值）");
 
-        // 绑定过滤逻辑
+        // 绑定过滤逻辑（带防抖）
+        final javafx.animation.PauseTransition[] debounceTimer = {null};
         ffView.textProperty().addListener((o, oldValue, searchText) -> {
-            filterEtsTableData(filteredData, tableData, searchText);
+            // 取消之前的定时器
+            if (debounceTimer[0] != null) {
+                debounceTimer[0].stop();
+            }
+            // 创建新的防抖定时器，延迟 300ms 执行过滤
+            debounceTimer[0] = new javafx.animation.PauseTransition(javafx.util.Duration.millis(300));
+            debounceTimer[0].setOnFinished(event -> {
+                filterEtsTableData(filteredData, tableData, searchText);
+            });
+            debounceTimer[0].play();
         });
 
         Region fxmlNode = (Region) loader.fxmlNode;

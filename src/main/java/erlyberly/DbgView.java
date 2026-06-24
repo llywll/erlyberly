@@ -166,6 +166,9 @@ public class DbgView implements Initializable {
     private StringProperty filterTextProperty;
 
     private TabPane tabPane;
+    
+    // 防抖定时器，避免频繁过滤导致卡死
+    private javafx.animation.PauseTransition filterDebounceTimer;
 
     private TextField floatyFieldTextField(FxmlLoadable loader) {
         // FIXME floaty field should allow access to the text field
@@ -180,10 +183,20 @@ public class DbgView implements Initializable {
     }
 
     public void onFunctionSearchChange(Observable o, String oldValue, String search) {
-        if(isSpecialTraceFilter(search))
-            filterForTracedFunctions();
-        else
-            filterForFunctionTextMatch(search);
+        // 取消之前的定时器
+        if (filterDebounceTimer != null) {
+            filterDebounceTimer.stop();
+        }
+        
+        // 创建新的防抖定时器，延迟 300ms 执行过滤
+        filterDebounceTimer = new javafx.animation.PauseTransition(javafx.util.Duration.millis(300));
+        filterDebounceTimer.setOnFinished(event -> {
+            if(isSpecialTraceFilter(search))
+                filterForTracedFunctions();
+            else
+                filterForFunctionTextMatch(search);
+        });
+        filterDebounceTimer.play();
     }
 
     private boolean isSpecialTraceFilter(String search) {
