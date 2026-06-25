@@ -113,7 +113,7 @@
                             <finalName>erlyberly-${project.version}-runnable</finalName>
                             <transformers>
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-                                    <mainClass>erlyberly.ErlyBerly</mainClass>
+                                    <mainClass>erlyberly.Launcher</mainClass>
                                 </transformer>
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
                             </transformers>

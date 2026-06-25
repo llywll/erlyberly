@@ -151,6 +151,9 @@ public class DbgView implements Initializable {
         TextField filterTextView;
         filterTextView = floatyFieldTextField(loader);
 
+        // 历史记录下拉（在 onFunctionSearchChange 防抖后过滤出非空结果时记录）
+        funcFilterHistory = InputHistoryDropdown.install(filterTextView, "historyFuncFilter", 50);
+
         Platform.runLater(() -> {
             FilterFocusManager.addFilter(filterTextView, 1);
         });
@@ -164,6 +167,8 @@ public class DbgView implements Initializable {
     static boolean toggleAllTracesDown = false;
 
     private StringProperty filterTextProperty;
+
+    private InputHistoryDropdown funcFilterHistory;
 
     private TabPane tabPane;
     
@@ -195,6 +200,11 @@ public class DbgView implements Initializable {
                 filterForTracedFunctions();
             else
                 filterForFunctionTextMatch(search);
+            // 过滤后若有非空结果则记录历史
+            if (funcFilterHistory != null && search != null && !search.trim().isEmpty()
+                    && !filteredTreeModules.isEmpty()) {
+                funcFilterHistory.record(search);
+            }
         });
         filterDebounceTimer.play();
     }

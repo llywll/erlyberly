@@ -213,6 +213,25 @@ public class ProcView implements Initializable {
 
         procController.filterProperty().bind(ffView.textProperty());
 
+        // 历史记录下拉：防抖后若过滤出非空结果则记录
+        javafx.scene.control.TextField filterTextField =
+            (javafx.scene.control.TextField) loader.fxmlNode.getChildrenUnmodifiable().get(1);
+        final InputHistoryDropdown procFilterHistory =
+            InputHistoryDropdown.install(filterTextField, "historyProcFilter", 50);
+        final javafx.animation.PauseTransition[] historyDebounce = {null};
+        ffView.textProperty().addListener((o, ov, text) -> {
+            if (historyDebounce[0] != null) {
+                historyDebounce[0].stop();
+            }
+            historyDebounce[0] = new javafx.animation.PauseTransition(javafx.util.Duration.millis(300));
+            historyDebounce[0].setOnFinished(ev -> {
+                if (text != null && !text.trim().isEmpty() && !procController.getProcs().isEmpty()) {
+                    procFilterHistory.record(text);
+                }
+            });
+            historyDebounce[0].play();
+        });
+
         Platform.runLater(() -> {
             FilterFocusManager.addFilter((Control) loader.fxmlNode.getChildrenUnmodifiable().get(1), 0);
         });
@@ -325,7 +344,7 @@ public class ProcView implements Initializable {
         tableView.setItems(sortedData);
 
         // 添加右键菜单和复制功能
-        addDictTableContextMenu(tableView, procInfo.getShortName(), filteredData, tableData, obj);
+        addDictTableContextMenu(tableView, procInfo, filteredData, tableData, obj);
 
         // 创建刷新按钮
         javafx.scene.control.Button refreshButton = new javafx.scene.control.Button("刷新");
@@ -726,6 +745,12 @@ public class ProcView implements Initializable {
         FloatyFieldView ffView = (FloatyFieldView) loader.controller;
         ffView.promptTextProperty().set("过滤进程字典数据（按 PID、注册名或模块名）");
 
+        // 历史记录下拉
+        javafx.scene.control.TextField dictFilterTextField =
+            (javafx.scene.control.TextField) loader.fxmlNode.getChildrenUnmodifiable().get(1);
+        final InputHistoryDropdown dictFilterHistory =
+            InputHistoryDropdown.install(dictFilterTextField, "historyProcDictFilter", 50);
+
         // 绑定过滤逻辑（带防抖）
         final javafx.animation.PauseTransition[] debounceTimer = {null};
         ffView.textProperty().addListener((o, oldValue, searchText) -> {
@@ -737,6 +762,10 @@ public class ProcView implements Initializable {
             debounceTimer[0] = new javafx.animation.PauseTransition(javafx.util.Duration.millis(300));
             debounceTimer[0].setOnFinished(event -> {
                 filterDictData(filteredData, tableData, searchText);
+                // 过滤后若有非空结果则记录历史
+                if (searchText != null && !searchText.trim().isEmpty() && !filteredData.isEmpty()) {
+                    dictFilterHistory.record(searchText);
+                }
             });
             debounceTimer[0].play();
         });
@@ -775,11 +804,12 @@ public class ProcView implements Initializable {
      * 为进程字典表格添加右键菜单和复制功能
      */
     @SuppressWarnings("unchecked")
-    private void addDictTableContextMenu(javafx.scene.control.TableView<DictTableRow> tableView, 
-                                         String procName,
+    private void addDictTableContextMenu(javafx.scene.control.TableView<DictTableRow> tableView,
+                                         ProcInfo procInfo,
                                          FilteredList<DictTableRow> filteredData,
                                          javafx.collections.ObservableList<DictTableRow> tableData,
                                          OtpErlangObject rawContentObj) {
+        String procName = procInfo.getShortName();
         javafx.scene.control.ContextMenu contextMenu = new javafx.scene.control.ContextMenu();
 
         // 复制选中行
@@ -811,7 +841,7 @@ public class ProcView implements Initializable {
 
         // 查看详细值菜单项
         javafx.scene.control.MenuItem viewDetailMenuItem = new javafx.scene.control.MenuItem("查看详细值");
-        viewDetailMenuItem.setOnAction(e -> showDictValueDetail(tableView));
+        viewDetailMenuItem.setOnAction(e -> showDictValueDetail(tableView, procInfo));
         contextMenu.getItems().add(viewDetailMenuItem);
 
         // 分隔线
@@ -845,7 +875,7 @@ public class ProcView implements Initializable {
         // 双击查看详细值
         tableView.setOnMouseClicked(event -> {
             if (event.getClickCount() == 2) {
-                showDictValueDetail(tableView);
+                showDictValueDetail(tableView, procInfo);
             }
         });
     }
@@ -853,7 +883,7 @@ public class ProcView implements Initializable {
     /**
      * 弹出窗口显示进程字典键或值的详细 Erlang 数据结构
      */
-    private void showDictValueDetail(javafx.scene.control.TableView<DictTableRow> tableView) {
+    private void showDictValueDetail(javafx.scene.control.TableView<DictTableRow> tableView, ProcInfo procInfo) {
         DictTableRow selectedRow = tableView.getSelectionModel().getSelectedItem();
         if (selectedRow == null) {
             return;
@@ -862,28 +892,47 @@ public class ProcView implements Initializable {
         if (rawValue == null) {
             return;
         }
-        // 传递表格引用和选中行索引，以便刷新时能重新获取数据
-        showTermDetailPopup(selectedRow.getKey(), rawValue, tableView, selectedRow.getIndex());
+        // 刷新时按键重新向节点拉取进程字典，取该键最新的值
+        final OtpErlangObject rawKey = selectedRow.getRawKey();
+        showTermDetailPopup(selectedRow.getKey(), rawValue,
+            onResult -> procController.processDictionary(procInfo,
+                eobj -> onResult.accept(findRawValueByKey(eobj, rawKey))));
+    }
+
+    /**
+     * 在 {key, value, ...} 元组列表中按原始键查找对应的原始值，找不到返回 null
+     */
+    private OtpErlangObject findRawValueByKey(OtpErlangObject contentObj, OtpErlangObject rawKey) {
+        if (contentObj instanceof com.ericsson.otp.erlang.OtpErlangList && rawKey != null) {
+            for (OtpErlangObject item : ((com.ericsson.otp.erlang.OtpErlangList) contentObj).elements()) {
+                if (item instanceof com.ericsson.otp.erlang.OtpErlangTuple) {
+                    com.ericsson.otp.erlang.OtpErlangTuple t = (com.ericsson.otp.erlang.OtpErlangTuple) item;
+                    if (t.arity() >= 2 && rawKey.equals(t.elementAt(0))) {
+                        return t.elementAt(1);
+                    }
+                }
+            }
+        }
+        return null;
     }
 
     /**
      * 使用 TermTreeView 弹窗显示 Erlang 数据结构的详细视图
      */
     private void showTermDetailPopup(String title, OtpErlangObject term) {
-        showTermDetailPopup(title, term, null, -1);
+        showTermDetailPopup(title, term, null);
     }
 
     /**
      * 使用 TermTreeView 弹窗显示 Erlang 数据结构的详细视图（支持刷新）
      * @param title 标题
      * @param term 初始显示的术语
-     * @param parentTableView 父表格引用（用于刷新时重新获取数据）
-     * @param rowIndex 行索引（用于刷新时定位数据）
+     * @param valueReloader 刷新回调：accept(onResult) 应异步向节点取该键最新值后调用 onResult.accept(最新值)，
+     *                      取不到则传 null；为 null 时表示不支持刷新
      */
     @SuppressWarnings("unchecked")
-    private void showTermDetailPopup(String title, OtpErlangObject term, 
-                                     javafx.scene.control.TableView<?> parentTableView,
-                                     int rowIndex) {
+    private void showTermDetailPopup(String title, OtpErlangObject term,
+                                     java.util.function.Consumer<java.util.function.Consumer<OtpErlangObject>> valueReloader) {
         TermTreeView termTreeView = new TermTreeView();
         termTreeView.populateFromTerm(term);
         termTreeView.setPrefSize(800, 600);
@@ -903,40 +952,25 @@ public class ProcView implements Initializable {
         javafx.scene.control.Button refreshButton = new javafx.scene.control.Button("刷新");
         refreshButton.setGraphic(FAIcon.create().icon(AwesomeIcon.ROTATE_LEFT));
         refreshButton.setGraphicTextGap(5d);
-        final javafx.scene.control.TableView<?>[] tableViewRef = {parentTableView};
-        final int[] rowIndexRef = {rowIndex};
-        final String[] currentTitle = {title};
-        
+
         refreshButton.setOnAction(e -> {
-            Platform.runLater(() -> {
-                try {
-                    // 如果有父表格引用，尝试从表格中重新获取最新数据
-                    if (tableViewRef[0] != null && rowIndexRef[0] >= 0) {
-                        Object item = tableViewRef[0].getItems().get(rowIndexRef[0]);
-                        OtpErlangObject newValue = null;
-                        
-                        if (item instanceof DictTableRow) {
-                            newValue = ((DictTableRow) item).getRawValue();
-                        }
-                        
-                        if (newValue != null) {
-                            // 更新当前术语引用
-                            currentTerm[0] = newValue;
-                            // 先清空树视图，再重新填充新数据
-                            termTreeView.getRoot().getChildren().clear();
-                            termTreeView.populateFromTerm(newValue);
-                            showNotification("已从节点重新加载数据", NotificationType.SUCCESS);
-                            return;
-                        }
-                    }
-                    
-                    // 如果没有父表格引用，只显示提示
-                    showNotification("无法重新加载数据（原始数据源已关闭）", NotificationType.INFO);
-                } catch (Exception ex) {
-                    showNotification("刷新失败: " + ex.getMessage(), NotificationType.ERROR);
-                    ex.printStackTrace();
+            if (valueReloader == null) {
+                showNotification("无法重新加载数据", NotificationType.INFO);
+                return;
+            }
+            refreshButton.setDisable(true);
+            valueReloader.accept(latest -> Platform.runLater(() -> {
+                refreshButton.setDisable(false);
+                if (latest != null) {
+                    currentTerm[0] = latest;
+                    // 先清空树视图，再重新填充从节点取回的新数据
+                    termTreeView.getRoot().getChildren().clear();
+                    termTreeView.populateFromTerm(latest);
+                    showNotification("已从节点重新加载数据", NotificationType.SUCCESS);
+                } else {
+                    showNotification("该键已不存在或无法获取最新值", NotificationType.INFO);
                 }
-            });
+            }));
         });
 
         javafx.scene.layout.HBox toolbar = new javafx.scene.layout.HBox(5, copyButton, refreshButton);

@@ -27,7 +27,7 @@
               <finalName>erlyberly-${project.version}-runnable</finalName>
               <transformers>
                 <transformer>
-                  <mainClass>erlyberly.ErlyBerly</mainClass>
+                  <mainClass>erlyberly.Launcher</mainClass>
                 </transformer>
                 <transformer />
               </transformers>
@@ -62,12 +62,14 @@
               <goal>exec</goal>
             </goals>
             <configuration>
-              <executable>erlc</executable>
+              <executable>cmd</executable>
               <arguments>
+                <argument>/c</argument>
+                <argument>erlc</argument>
                 <argument>+debug_info</argument>
                 <argument>-o</argument>
-                <argument>src/main/resources/erlyberly/beam/</argument>
-                <argument>src/main/resources/erlyberly/beam/erlyberly.erl</argument>
+                <argument>${project.basedir}/src/main/resources/erlyberly/beam/</argument>
+                <argument>${project.basedir}/src/main/resources/erlyberly/beam/erlyberly.erl</argument>
               </arguments>
             </configuration>
           </execution>
@@ -85,8 +87,9 @@
         <artifactId>maven-compiler-plugin</artifactId>
         <version>3.11.0</version>
         <configuration>
-          <source>26</source>
-          <target>26</target>
+          <source>25</source>
+          <target>25</target>
+          <release>25</release>
         </configuration>
       </plugin>
     </plugins>

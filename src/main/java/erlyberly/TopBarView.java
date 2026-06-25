@@ -528,6 +528,12 @@ public class TopBarView implements Initializable {
         FloatyFieldView ffView = (FloatyFieldView) loader.controller;
         ffView.promptTextProperty().set("过滤 ETS 表（搜索表名、类型或所有者）");
 
+        // 历史记录下拉
+        javafx.scene.control.TextField etsListFilterTextField =
+            (javafx.scene.control.TextField) loader.fxmlNode.getChildrenUnmodifiable().get(1);
+        final InputHistoryDropdown etsListFilterHistory =
+            InputHistoryDropdown.install(etsListFilterTextField, "historyEtsTableListFilter", 50);
+
         // 绑定过滤逻辑（带防抖）
         final javafx.animation.PauseTransition[] debounceTimer = {null};
         ffView.textProperty().addListener((o, oldValue, searchText) -> {
@@ -539,6 +545,10 @@ public class TopBarView implements Initializable {
             debounceTimer[0] = new javafx.animation.PauseTransition(javafx.util.Duration.millis(300));
             debounceTimer[0].setOnFinished(event -> {
                 filterEtsTableList(filteredData, tableData, searchText);
+                // 过滤后若有非空结果则记录历史
+                if (searchText != null && !searchText.trim().isEmpty() && !filteredData.isEmpty()) {
+                    etsListFilterHistory.record(searchText);
+                }
             });
             debounceTimer[0].play();
         });
@@ -823,7 +833,7 @@ public class TopBarView implements Initializable {
 
         // 查看详细值菜单项
         javafx.scene.control.MenuItem viewDetailMenuItem = new javafx.scene.control.MenuItem("查看详细值");
-        viewDetailMenuItem.setOnAction(e -> showEtsValueDetail(tableView));
+        viewDetailMenuItem.setOnAction(e -> showEtsValueDetail(tableView, tableName));
         contextMenu.getItems().add(viewDetailMenuItem);
 
         // 导出到文件菜单项（使用原始数据，不是过滤后的）
@@ -858,7 +868,7 @@ public class TopBarView implements Initializable {
         // 添加双击查看详细值功能
         tableView.setOnMouseClicked(event -> {
             if (event.getClickCount() == 2) {
-                showEtsValueDetail(tableView);
+                showEtsValueDetail(tableView, tableName);
             }
         });
     }
@@ -866,7 +876,7 @@ public class TopBarView implements Initializable {
     /**
      * 弹出窗口显示 ETS 表键或值的详细 Erlang 数据结构
      */
-    private void showEtsValueDetail(javafx.scene.control.TableView<EtsTableRow> tableView) {
+    private void showEtsValueDetail(javafx.scene.control.TableView<EtsTableRow> tableView, String tableName) {
         EtsTableRow selectedRow = tableView.getSelectionModel().getSelectedItem();
         if (selectedRow == null) {
             return;
@@ -875,28 +885,53 @@ public class TopBarView implements Initializable {
         if (rawValue == null) {
             return;
         }
-        // 传递表格引用和选中行索引，以便刷新时能重新获取数据
-        showTermDetailPopup(selectedRow.getKey(), rawValue, tableView, selectedRow.getIndex());
+        // 刷新时按键重新向节点拉取 ETS 表内容，取该键最新的值
+        final OtpErlangObject rawKey = selectedRow.getRawKey();
+        showTermDetailPopup(selectedRow.getKey(), rawValue, onResult -> new Thread(() -> {
+            OtpErlangObject latest = null;
+            try {
+                latest = findRawValueByKey(ErlyBerly.nodeAPI().getEtsTableInfo(tableName), rawKey);
+            } catch (Exception ex) {
+                ex.printStackTrace();
+            }
+            onResult.accept(latest);
+        }).start());
+    }
+
+    /**
+     * 在 {key, value, ...} 元组列表中按原始键查找对应的原始值，找不到返回 null
+     */
+    private OtpErlangObject findRawValueByKey(OtpErlangObject contentObj, OtpErlangObject rawKey) {
+        if (contentObj instanceof com.ericsson.otp.erlang.OtpErlangList && rawKey != null) {
+            for (OtpErlangObject item : ((com.ericsson.otp.erlang.OtpErlangList) contentObj).elements()) {
+                if (item instanceof com.ericsson.otp.erlang.OtpErlangTuple) {
+                    com.ericsson.otp.erlang.OtpErlangTuple t = (com.ericsson.otp.erlang.OtpErlangTuple) item;
+                    if (t.arity() >= 2 && rawKey.equals(t.elementAt(0))) {
+                        return t.elementAt(1);
+                    }
+                }
+            }
+        }
+        return null;
     }
 
     /**
      * 使用 TermTreeView 弹窗显示 Erlang 数据结构的详细视图
      */
     private void showTermDetailPopup(String title, OtpErlangObject term) {
-        showTermDetailPopup(title, term, null, -1);
+        showTermDetailPopup(title, term, null);
     }
 
     /**
      * 使用 TermTreeView 弹窗显示 Erlang 数据结构的详细视图（支持刷新）
      * @param title 标题
      * @param term 初始显示的术语
-     * @param parentTableView 父表格引用（用于刷新时重新获取数据）
-     * @param rowIndex 行索引（用于刷新时定位数据）
+     * @param valueReloader 刷新回调：accept(onResult) 应异步向节点取该键最新值后调用 onResult.accept(最新值)，
+     *                      取不到则传 null；为 null 时表示不支持刷新
      */
     @SuppressWarnings("unchecked")
-    private void showTermDetailPopup(String title, OtpErlangObject term, 
-                                     javafx.scene.control.TableView<?> parentTableView,
-                                     int rowIndex) {
+    private void showTermDetailPopup(String title, OtpErlangObject term,
+                                     java.util.function.Consumer<java.util.function.Consumer<OtpErlangObject>> valueReloader) {
         TermTreeView termTreeView = new TermTreeView();
         termTreeView.populateFromTerm(term);
         termTreeView.setPrefSize(800, 600);
@@ -916,42 +951,25 @@ public class TopBarView implements Initializable {
         javafx.scene.control.Button refreshButton = new javafx.scene.control.Button("刷新");
         refreshButton.setGraphic(FAIcon.create().icon(AwesomeIcon.ROTATE_LEFT));
         refreshButton.setGraphicTextGap(5d);
-        final javafx.scene.control.TableView<?>[] tableViewRef = {parentTableView};
-        final int[] rowIndexRef = {rowIndex};
-        final String[] currentTitle = {title};
-        
+
         refreshButton.setOnAction(e -> {
-            Platform.runLater(() -> {
-                try {
-                    // 如果有父表格引用，尝试从表格中重新获取最新数据
-                    if (tableViewRef[0] != null && rowIndexRef[0] >= 0) {
-                        Object item = tableViewRef[0].getItems().get(rowIndexRef[0]);
-                        OtpErlangObject newValue = null;
-                        
-                        if (item instanceof EtsTableRow) {
-                            newValue = ((EtsTableRow) item).getRawValue();
-                        } else if (item instanceof ProcView.DictTableRow) {
-                            newValue = ((ProcView.DictTableRow) item).getRawValue();
-                        }
-                        
-                        if (newValue != null) {
-                            // 更新当前术语引用
-                            currentTerm[0] = newValue;
-                            // 先清空树视图，再重新填充新数据
-                            termTreeView.getRoot().getChildren().clear();
-                            termTreeView.populateFromTerm(newValue);
-                            showNotification("已从节点重新加载数据", NotificationType.SUCCESS);
-                            return;
-                        }
-                    }
-                    
-                    // 如果没有父表格引用，只显示提示
-                    showNotification("无法重新加载数据（原始数据源已关闭）", NotificationType.INFO);
-                } catch (Exception ex) {
-                    showNotification("刷新失败: " + ex.getMessage(), NotificationType.ERROR);
-                    ex.printStackTrace();
+            if (valueReloader == null) {
+                showNotification("无法重新加载数据", NotificationType.INFO);
+                return;
+            }
+            refreshButton.setDisable(true);
+            valueReloader.accept(latest -> Platform.runLater(() -> {
+                refreshButton.setDisable(false);
+                if (latest != null) {
+                    currentTerm[0] = latest;
+                    // 先清空树视图，再重新填充从节点取回的新数据
+                    termTreeView.getRoot().getChildren().clear();
+                    termTreeView.populateFromTerm(latest);
+                    showNotification("已从节点重新加载数据", NotificationType.SUCCESS);
+                } else {
+                    showNotification("该键已不存在或无法获取最新值", NotificationType.INFO);
                 }
-            });
+            }));
         });
 
         javafx.scene.layout.HBox toolbar = new javafx.scene.layout.HBox(5, copyButton, refreshButton);
@@ -1306,6 +1324,12 @@ public class TopBarView implements Initializable {
         FloatyFieldView ffView = (FloatyFieldView) loader.controller;
         ffView.promptTextProperty().set("过滤 ETS 表数据（搜索键和值）");
 
+        // 历史记录下拉
+        javafx.scene.control.TextField etsDataFilterTextField =
+            (javafx.scene.control.TextField) loader.fxmlNode.getChildrenUnmodifiable().get(1);
+        final InputHistoryDropdown etsDataFilterHistory =
+            InputHistoryDropdown.install(etsDataFilterTextField, "historyEtsTableContentFilter", 50);
+
         // 绑定过滤逻辑（带防抖）
         final javafx.animation.PauseTransition[] debounceTimer = {null};
         ffView.textProperty().addListener((o, oldValue, searchText) -> {
@@ -1317,6 +1341,10 @@ public class TopBarView implements Initializable {
             debounceTimer[0] = new javafx.animation.PauseTransition(javafx.util.Duration.millis(300));
             debounceTimer[0].setOnFinished(event -> {
                 filterEtsTableData(filteredData, tableData, searchText);
+                // 过滤后若有非空结果则记录历史
+                if (searchText != null && !searchText.trim().isEmpty() && !filteredData.isEmpty()) {
+                    etsDataFilterHistory.record(searchText);
+                }
             });
             debounceTimer[0].play();
         });

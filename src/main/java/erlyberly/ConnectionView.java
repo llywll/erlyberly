@@ -51,12 +51,21 @@ public class ConnectionView implements Initializable {
     @FXML
     private CheckBox autoConnectField;
 
+    private InputHistoryDropdown localNodeHistory;
+    private InputHistoryDropdown targetNodeHistory;
+    private InputHistoryDropdown cookieHistory;
+
     @Override
     public void initialize(URL url, ResourceBundle r) {
         PrefBind.bind("targetNodeName", nodeNameField.textProperty());
         PrefBind.bind("localNodeName", localNodeNameField.textProperty());
         PrefBind.bind("cookieName", cookieField.textProperty());
         PrefBind.bindBoolean("autoConnect", autoConnectField.selectedProperty());
+
+        // 为连接输入框加历史记录下拉（在连接成功时记录，见 ConnectorThead.run）
+        localNodeHistory = InputHistoryDropdown.install(localNodeNameField, "historyLocalNodeName", 50);
+        targetNodeHistory = InputHistoryDropdown.install(nodeNameField, "historyTargetNodeName", 50);
+        cookieHistory = InputHistoryDropdown.install(cookieField, "historyCookieName", 50);
 
         nodeNameField.disableProperty().bind(isConnecting);
         localNodeNameField.disableProperty().bind(isConnecting);
@@ -138,7 +147,13 @@ public class ConnectionView implements Initializable {
                     .connectionInfo(localNodeName, remoteNodeName, cookie)
                     .manualConnect();
 
-                Platform.runLater(() -> { closeThisWindow(); });
+                // 连接成功后记录历史，再关闭窗口（均在 FX 线程）
+                Platform.runLater(() -> {
+                    localNodeHistory.record(localNodeName);
+                    targetNodeHistory.record(remoteNodeName);
+                    cookieHistory.record(cookie);
+                    closeThisWindow();
+                });
             }
             catch (OtpErlangException | OtpAuthException | IOException e) {
                 Platform.runLater(() -> { connectionFailed(e.getMessage()); });
