@@ -28,6 +28,7 @@ import java.io.InputStream;
 import java.net.InetAddress;
 import java.net.NetworkInterface;
 import java.net.SocketException;
+import java.nio.file.Files;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicLong;
@@ -228,6 +229,15 @@ public class NodeAPI {
 
         loadRemoteErlyberly();
 
+        // 清理目标节点上残留的旧 erlyberly_tcollector（上次会话遗留的 tracer 会把 trace 发往已死的节点）
+        try {
+            OtpErlangObject tp = rpc("erlang", "whereis", list(atom("erlyberly_tcollector")));
+            if (tp instanceof OtpErlangPid) {
+                rpc("erlang", "exit", list(tp, atom("kill")));
+            }
+        } catch (Exception ignored) {
+        }
+
         addErrorLoggerHandler();
 
         // start dbg so we can listen for module loads
@@ -235,6 +245,8 @@ public class NodeAPI {
 
         loadModulesOnPath(PrefBind.getOrDefault("loadModulesRegex", "").toString());
 
+        // 同步置位（Property 的 runLater 更新是异步的，REST 立即查询状态时会读到旧值）
+        connected = true;
         Platform.runLater(() -> {
             connectedProperty.set(true);
         });
@@ -254,8 +266,12 @@ public class NodeAPI {
         removeErrorLoggerHandler();
         unloadRemoteErlyberly();
         mbox.close();
+        connected = false;
         Platform.runLater(() -> {
             connectedProperty.set(false);
+            // 手动断开时不要显示"connection lost, reconnecting..."，直接显示未连接
+            summary.set(ERLYBERLY + " not connected");
+            appProcs.set(new AppProcs(0, LocalDateTime.now()));
         });
     }
 
@@ -277,6 +293,8 @@ public class NodeAPI {
         connected = false;
         Platform.runLater(() -> {
             suspendedProperty.set(false);
+            summary.set(ERLYBERLY + " not connected");
+            appProcs.set(new AppProcs(0, LocalDateTime.now()));
         });
     }
 
@@ -288,8 +306,8 @@ public class NodeAPI {
         // the return should be {ok, TracerPid} or {error, already_started}
         // we don't need to store the pid because it is registered
         OtpErlangObject returnedObject = receiveRPC();
-        if (OtpUtil.isTupleTagged(OK_ATOM, returnedObject)) {
-            // dbg 启动成功，正常返回
+        if (OtpUtil.isTupleTagged(OK_ATOM, returnedObject) || isBareOk(returnedObject)) {
+            // dbg 启动成功，正常返回（erlyberly.erl 定制版在 tcollector 已注册时返回裸 ok 原子）
             return;
         } else if (isTupleTagged(ERROR_ATOM, returnedObject)) {
             // dbg 已经启动，这也是可以接受的
@@ -299,8 +317,119 @@ public class NodeAPI {
                 return;
             }
         }
+        // 目标节点缺少 runtime_tools（dbg:start 为 undef）时，尝试自动救援后重试一次
+        if (String.valueOf(returnedObject).contains("undef")) {
+            rescueRuntimeTools();
+            sendRPC(
+                    ERLYBERLY, "ensure_dbg_started",
+                    list(tuple(atom(self.node()), mbox.self()), PrefBind.getMaxTraceQueueLengthConfig())
+            );
+            OtpErlangObject retried = receiveRPC();
+            if (OtpUtil.isTupleTagged(OK_ATOM, retried) || isBareOk(retried)) {
+                return;
+            } else if (isTupleTagged(ERROR_ATOM, retried)) {
+                OtpErlangTuple errorTuple = (OtpErlangTuple) retried;
+                if (errorTuple.arity() >= 2 && ERROR_ALREADY_STARTED_ATOM.equals(errorTuple.elementAt(1))) {
+                    return;
+                }
+            }
+            throw new RuntimeException("Failed to ensure dbg started (after runtime_tools rescue): " + retried);
+        }
         // 其他错误情况才抛出异常
         throw new RuntimeException("Failed to ensure dbg started: " + returnedObject);
+    }
+
+    /**
+     * 目标节点 code path 中没有 dbg/runtime_tools 时的自动救援：
+     * 1. 优先把目标节点自己 OTP 根目录下的 runtime_tools ebin 目录加回 code path；
+     * 2. 目标机器盘上也没有时，从本机 Erlang 安装读取 dbg.beam 用 code:load_binary 注入。
+     */
+    private void rescueRuntimeTools() throws IOException, OtpErlangException {
+        // 目标节点上 dbg 是否真的缺失（code:which 缺失时返回 undefined 或 non_existing）
+        sendRPC("code", "which", list(atom("dbg")));
+        OtpErlangObject which = receiveRPC();
+        boolean missing = which instanceof OtpErlangAtom a
+                && ("undefined".equals(a.atomValue()) || "non_existing".equals(a.atomValue()));
+        if (!missing) {
+            // dbg 模块在目标节点存在，undef 来自别处，不做处理
+            return;
+        }
+
+        // 1) 目标节点自己的 OTP 根目录里找 runtime_tools
+        sendRPC("code", "root_dir", list());
+        OtpErlangObject rootObj = receiveRPC();
+        System.out.println("rescue: target OTP root_dir = " + rootObj);
+        if (rootObj instanceof OtpErlangString rootDir) {
+            String pattern = rootDir.stringValue() + "/lib/runtime_tools-*/ebin";
+            sendRPC("filelib", "wildcard", list(new OtpErlangString(pattern)));
+            OtpErlangObject dirsObj = receiveRPC();
+            System.out.println("rescue: wildcard dirs = " + dirsObj);
+            if (dirsObj instanceof OtpErlangList dirs) {
+                for (OtpErlangObject dir : dirs.elements()) {
+                    sendRPC("code", "add_patha", list(dir));
+                    receiveRPC();
+                }
+            }
+            sendRPC("code", "which", list(atom("dbg")));
+            OtpErlangObject recheck = receiveRPC();
+            System.out.println("rescue: recheck code:which(dbg) = " + recheck);
+            if (!(recheck instanceof OtpErlangAtom ra
+                    && ("undefined".equals(ra.atomValue()) || "non_existing".equals(ra.atomValue())))) {
+                System.out.println("rescued runtime_tools from target OTP root: " + recheck);
+                return;
+            }
+        }
+
+        // 2) 从本机 Erlang 安装里找 dbg.beam 注入
+        byte[] dbgBeam = findLocalDbgBeam();
+        if (dbgBeam != null) {
+            sendRPC("code", "load_binary",
+                    list(atom("dbg"), new OtpErlangString(""), new OtpErlangBinary(dbgBeam)));
+            receiveRPC();
+            sendRPC("code", "which", list(atom("dbg")));
+            OtpErlangObject recheck2 = receiveRPC();
+            System.out.println("injected dbg.beam from local installation, code:which -> " + recheck2);
+        } else {
+            System.err.println("runtime_tools rescue failed: dbg.beam not found on target or local machine");
+        }
+    }
+
+    /** 在本机常见 Erlang 安装位置搜索 dbg.beam */
+    private static byte[] findLocalDbgBeam() {
+        String home = System.getProperty("user.home");
+        String[][] candidates = {
+                // {glob 模式（绝对路径）, 搜索起始目录}
+                {home + "/.vfox/cache/erlang/**/runtime_tools-*/ebin/dbg.beam", home + "/.vfox/cache/erlang"},
+                {"/usr/local/lib/erlang/**/runtime_tools-*/ebin/dbg.beam", "/usr/local/lib/erlang"},
+                {"/opt/homebrew/lib/erlang/**/runtime_tools-*/ebin/dbg.beam", "/opt/homebrew/lib/erlang"},
+                {"/opt/local/lib/erlang/**/runtime_tools-*/ebin/dbg.beam", "/opt/local/lib/erlang"},
+                {"/usr/lib/erlang/**/runtime_tools-*/ebin/dbg.beam", "/usr/lib/erlang"}
+        };
+        for (String[] c : candidates) {
+            String glob = c[0];
+            java.nio.file.Path base = java.nio.file.Paths.get(c[1]);
+            if (!java.nio.file.Files.exists(base)) {
+                continue;
+            }
+            try {
+                java.nio.file.PathMatcher matcher =
+                        java.nio.file.FileSystems.getDefault().getPathMatcher("glob:" + glob);
+                try (java.util.stream.Stream<java.nio.file.Path> stream = java.nio.file.Files.walk(base, 12)) {
+                    java.nio.file.Path found = stream
+                            .filter(Files::isRegularFile)
+                            .filter(matcher::matches)
+                            .findFirst()
+                            .orElse(null);
+                    if (found != null) {
+                        System.out.println("local dbg.beam found: " + found);
+                        return java.nio.file.Files.readAllBytes(found);
+                    }
+                }
+            } catch (Exception e) {
+                System.out.println("search failed for " + glob + ": " + e);
+            }
+        }
+        return null;
     }
 
     private void loadModulesOnPath(String regex) throws IOException, OtpErlangException {
@@ -369,15 +498,16 @@ public class NodeAPI {
             });
 
             while (true) {
+                // 手动断开后不再自动重连，退出探活循环（否则会无 sleep 空转占满 CPU）
+                if (manuallyDisconnected) {
+                    return true;
+                }
                 try {
-                    if (!manuallyDisconnected) {
-                        connect();
-                        break;
-                    }
+                    connect();
+                    break;
                 } catch (Exception e) {
                     int millis = 50;
                     mySleep(millis);
-
                 }
             }
             return true;
@@ -791,6 +921,43 @@ public class NodeAPI {
         return connected;
     }
 
+    /** 当前配置的目标节点名（连接前也有值），供 UI/接口展示 */
+    public String getRemoteNodeName() {
+        return remoteNodeName;
+    }
+
+    /** 判断结果是否为裸 ok 原子（定制版 erlyberly.erl 的 ensure_dbg_started 返回值） */
+    private static boolean isBareOk(OtpErlangObject o) {
+        return o instanceof OtpErlangAtom a && "ok".equals(a.atomValue());
+    }
+
+    /** 按注册名向已连接的节点发送消息（与 rex 路径一致，可靠） */
+    public void sendToRegistered(String destRegName, OtpErlangObject msg) throws IOException {
+        connection.send(mbox.self(), destRegName, msg);
+    }
+
+    /** 按注册名发送（重载：接受任意消息对象） */
+    public void sendToRegistered(String destRegName, OtpErlangObject[] msgParts) throws IOException {
+        connection.send(mbox.self(), destRegName, new OtpErlangTuple(msgParts));
+    }
+
+    /** 通用 RPC：供会话层扩展使用（如控制台的 erl_scan/erl_parse/erl_eval 求值链） */
+    public OtpErlangObject rpc(String module, String function, OtpErlangList args)
+            throws IOException, OtpErlangException {
+        sendRPC(module, function, args);
+        return receiveRPC();
+    }
+
+    /** 创建控制台专用邮箱（作为远程 shell 的 group leader） */
+    public OtpMbox createShellMbox() {
+        return self.createMbox();
+    }
+
+    /** 连接时设置的 cookie（供 pty 控制台启动 erl -remsh 使用） */
+    public String getCookie() {
+        return cookie;
+    }
+
     public boolean manuallyDisconnected() {
         return manuallyDisconnected;
     }
@@ -881,6 +1048,11 @@ public class NodeAPI {
 
     public void setTraceLogCallback(RpcCallback<TraceLog> traceLogCallback) {
         this.traceLogCallback = traceLogCallback;
+    }
+
+    /** 转发跟踪完成事件钩子到内部 TraceManager（实例级，支持多会话） */
+    public void setTraceCompletionListener(TraceManager.TraceCompletionListener listener) {
+        traceManager.setTraceCompletionListener(listener);
     }
 
     public void toggleSuspended() throws OtpErlangException, IOException {

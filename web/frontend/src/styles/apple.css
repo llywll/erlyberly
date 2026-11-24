@@ -1,0 +1,194 @@
+/* erlyberly web — Apple 官网审美主题 */
+
+:root {
+  --eb-bg: #f5f5f7;
+  --eb-surface: #ffffff;
+  --eb-text: #1d1d1f;
+  --eb-text-secondary: #6e6e73;
+  --eb-accent: #0071e3;
+  --eb-accent-hover: #0077ed;
+  --eb-hairline: rgba(0, 0, 0, 0.1);
+  --eb-danger: #e30000;
+  --eb-green: #34c759;
+  --eb-radius: 18px;
+  --eb-font: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text',
+    'Helvetica Neue', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: var(--eb-font);
+  background: var(--eb-bg);
+  color: var(--eb-text);
+  -webkit-font-smoothing: antialiased;
+  letter-spacing: -0.01em;
+}
+
+/* 毛玻璃顶栏 */
+.eb-glassbar {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  border-bottom: 1px solid var(--eb-hairline);
+}
+
+/* 卡片 */
+.eb-card {
+  background: var(--eb-surface);
+  border-radius: var(--eb-radius);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
+  padding: 22px;
+}
+
+.eb-card-title {
+  font-size: 21px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  margin: 0 0 4px;
+}
+
+.eb-card-sub {
+  color: var(--eb-text-secondary);
+  font-size: 13px;
+  margin: 0 0 18px;
+}
+
+/* 大标题（连接页 hero 风格） */
+.eb-hero-title {
+  font-size: 48px;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  line-height: 1.08;
+  background: linear-gradient(92deg, #1d1d1f 0%, #4b4b50 60%, #0071e3 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  margin: 0 0 10px;
+}
+
+.eb-hero-sub {
+  font-size: 17px;
+  color: var(--eb-text-secondary);
+  margin: 0 0 34px;
+}
+
+/* Apple 风格按钮 */
+.eb-btn {
+  appearance: none;
+  border: none;
+  border-radius: 980px;
+  padding: 8px 18px;
+  font-size: 14px;
+  font-family: var(--eb-font);
+  cursor: pointer;
+  transition: all 0.18s ease;
+  background: var(--eb-surface);
+  color: var(--eb-accent);
+}
+.eb-btn:hover {
+  background: rgba(0, 113, 227, 0.06);
+}
+.eb-btn-primary {
+  background: var(--eb-accent);
+  color: #fff;
+}
+.eb-btn-primary:hover {
+  background: var(--eb-accent-hover);
+}
+.eb-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* 状态圆点 */
+.eb-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  margin-right: 6px;
+}
+.eb-dot.on {
+  background: var(--eb-green);
+  box-shadow: 0 0 6px rgba(52, 199, 89, 0.6);
+}
+.eb-dot.off {
+  background: #b9b9be;
+}
+
+/* 表格行状态 */
+.eb-row-exception td {
+  color: var(--eb-danger) !important;
+}
+.eb-row-breaker td {
+  background: rgba(0, 113, 227, 0.08) !important;
+  font-weight: 600;
+  text-align: center;
+}
+
+/* 过滤输入框 */
+.eb-filter-input input {
+  border-radius: 10px !important;
+}
+
+/* 术语树 */
+.eb-term-children {
+  margin-left: 18px;
+  border-left: 1px solid var(--eb-hairline);
+  padding-left: 10px;
+}
+.eb-term-key {
+  color: #a26dca;
+}
+.eb-term-atom {
+  color: #0071e3;
+}
+.eb-term-string {
+  color: #b25000;
+}
+.eb-term-number {
+  color: #1d7d3d;
+}
+.eb-term-pid {
+  color: #6e6e73;
+}
+
+/* 平滑过渡动画（克制的 Apple 式动效） */
+.eb-fade-enter-active,
+.eb-fade-leave-active {
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+.eb-fade-enter-from,
+.eb-fade-leave-to {
+  opacity: 0;
+  transform: translateY(6px);
+}
+
+/* 滚动区 */
+.eb-scroll {
+  overflow: auto;
+  scrollbar-width: thin;
+}
+
+/* 让 n-tabs 的内容区撑满高度（否则 tab 内 flex-height 表格高度为 0） */
+.n-tabs {
+  display: flex;
+  flex-direction: column;
+}
+.n-tabs > .n-tabs-pane-wrapper {
+  flex: 1;
+  min-height: 0;
+}
+.n-tabs > .n-tabs-pane-wrapper > .n-tab-pane {
+  height: 100%;
+  box-sizing: border-box;
+}

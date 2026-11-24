@@ -41,6 +41,20 @@ public class TraceManager {
 
     private final HashMap<String, Stack<TraceLog>> unfinishedCalls = new HashMap<String, Stack<TraceLog>>();
 
+    /**
+     * 跟踪调用完成（return/exception）时的通知钩子（实例级，支持多连接会话各自注册）。
+     * 桌面版不注册此钩子（通过 JavaFX 属性监听即可），Web 版用它推送完成事件。
+     */
+    public interface TraceCompletionListener {
+        void completed(TraceLog log);
+    }
+
+    private volatile TraceCompletionListener completionListener;
+
+    public void setTraceCompletionListener(TraceCompletionListener listener) {
+        completionListener = listener;
+    }
+
 
     public List<TraceLog> collateTraces(OtpErlangList traceLogs) {
         final ArrayList<TraceLog> traceList = new ArrayList<TraceLog>();
@@ -90,6 +104,11 @@ public class TraceManager {
 
                 TraceLog traceLog = stack.pop();
                 traceLog.complete(map);
+
+                TraceCompletionListener listener = completionListener;
+                if (listener != null) {
+                    listener.completed(traceLog);
+                }
 
                 if(stack.isEmpty())
                     unfinishedCalls.remove(pidString.stringValue());

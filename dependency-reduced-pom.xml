@@ -51,31 +51,6 @@
         <version>2.5.3</version>
       </plugin>
       <plugin>
-        <groupId>org.codehaus.mojo</groupId>
-        <artifactId>exec-maven-plugin</artifactId>
-        <version>1.6.0</version>
-        <executions>
-          <execution>
-            <id>Version Calculation</id>
-            <phase>compile</phase>
-            <goals>
-              <goal>exec</goal>
-            </goals>
-            <configuration>
-              <executable>cmd</executable>
-              <arguments>
-                <argument>/c</argument>
-                <argument>erlc</argument>
-                <argument>+debug_info</argument>
-                <argument>-o</argument>
-                <argument>${project.basedir}/src/main/resources/erlyberly/beam/</argument>
-                <argument>${project.basedir}/src/main/resources/erlyberly/beam/erlyberly.erl</argument>
-              </arguments>
-            </configuration>
-          </execution>
-        </executions>
-      </plugin>
-      <plugin>
         <groupId>org.openjfx</groupId>
         <artifactId>javafx-maven-plugin</artifactId>
         <version>0.0.8</version>
@@ -94,7 +69,73 @@
       </plugin>
     </plugins>
   </build>
+  <profiles>
+    <profile>
+      <id>erlc-windows</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.codehaus.mojo</groupId>
+            <artifactId>exec-maven-plugin</artifactId>
+            <version>1.6.0</version>
+            <executions>
+              <execution>
+                <id>Version Calculation</id>
+                <phase>compile</phase>
+                <goals>
+                  <goal>exec</goal>
+                </goals>
+                <configuration>
+                  <executable>cmd</executable>
+                  <arguments>
+                    <argument>/c</argument>
+                    <argument>erlc</argument>
+                    <argument>+debug_info</argument>
+                    <argument>-o</argument>
+                    <argument>${project.basedir}/src/main/resources/erlyberly/beam/</argument>
+                    <argument>${project.basedir}/src/main/resources/erlyberly/beam/erlyberly.erl</argument>
+                  </arguments>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+    <profile>
+      <id>erlc-unix</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.codehaus.mojo</groupId>
+            <artifactId>exec-maven-plugin</artifactId>
+            <version>1.6.0</version>
+            <executions>
+              <execution>
+                <id>Version Calculation</id>
+                <phase>compile</phase>
+                <goals>
+                  <goal>exec</goal>
+                </goals>
+                <configuration>
+                  <executable>sh</executable>
+                  <arguments>
+                    <argument>-c</argument>
+                    <argument>command -v erlc &gt;/dev/null 2&gt;&amp;1 &amp;&amp; erlc +debug_info -o '/Users/miso/Documents/other_project/erlyberly/src/main/resources/erlyberly/beam/' '/Users/miso/Documents/other_project/erlyberly/src/main/resources/erlyberly/beam/erlyberly.erl' || echo 'erlc 未找到，跳过 beam 编译'</argument>
+                  </arguments>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
   <repositories>
+    <repository>
+      <id>project-local</id>
+      <url>file://${project.basedir}/local-repo</url>
+    </repository>
     <repository>
       <id>jitpack.io</id>
       <url>https://jitpack.io</url>
